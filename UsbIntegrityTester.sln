@@ -1,0 +1,34 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UsbIntegrityTester.Core", "UsbIntegrityTester.Core\UsbIntegrityTester.Core.csproj", "{2F3C2D08-81DB-4D29-ABC6-475ED3246A85}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UsbIntegrityTester.Tests", "UsbIntegrityTester.Tests\UsbIntegrityTester.Tests.csproj", "{CE9C38B6-272A-44BC-B6D2-2F54A0ED505B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UsbIntegrityTester.App", "UsbIntegrityTester.App\UsbIntegrityTester.App.csproj", "{4AA2C597-DDB6-4E00-A452-E4084934560B}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{2F3C2D08-81DB-4D29-ABC6-475ED3246A85}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2F3C2D08-81DB-4D29-ABC6-475ED3246A85}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2F3C2D08-81DB-4D29-ABC6-475ED3246A85}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2F3C2D08-81DB-4D29-ABC6-475ED3246A85}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CE9C38B6-272A-44BC-B6D2-2F54A0ED505B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CE9C38B6-272A-44BC-B6D2-2F54A0ED505B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CE9C38B6-272A-44BC-B6D2-2F54A0ED505B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CE9C38B6-272A-44BC-B6D2-2F54A0ED505B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4AA2C597-DDB6-4E00-A452-E4084934560B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4AA2C597-DDB6-4E00-A452-E4084934560B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4AA2C597-DDB6-4E00-A452-E4084934560B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4AA2C597-DDB6-4E00-A452-E4084934560B}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
