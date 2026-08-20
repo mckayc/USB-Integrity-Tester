@@ -1,0 +1,68 @@
+<UserControl x:Class="UsbIntegrityTester.App.Views.ClaimedStatsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="700">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="24" MaxWidth="520" HorizontalAlignment="Left">
+
+            <TextBlock Text="Claimed Stats" FontSize="24" FontWeight="SemiBold" Margin="0,0,0,4"/>
+            <TextBlock Text="Tell the tester what this drive is supposed to be, then verify it against reality."
+                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,20" TextWrapping="Wrap"/>
+
+            <ui:CardExpander Header="Drive" IsExpanded="True" Margin="0,0,0,16">
+                <ui:CardExpander.Icon>
+                    <ui:SymbolIcon Symbol="UsbStick24"/>
+                </ui:CardExpander.Icon>
+                <StackPanel Margin="0,8,0,0">
+                    <ComboBox ItemsSource="{Binding AvailableDrives}"
+                              SelectedItem="{Binding SelectedDrive}"
+                              DisplayMemberPath="Model" Margin="0,0,0,8"/>
+                    <ui:Button Content="Refresh Drives" Command="{Binding RefreshDrivesCommand}"
+                               HorizontalAlignment="Left" Margin="0,0,0,12">
+                        <ui:Button.Icon>
+                            <ui:SymbolIcon Symbol="ArrowSync24"/>
+                        </ui:Button.Icon>
+                    </ui:Button>
+
+                    <TextBlock Text="{Binding SelectedDrive.SerialNumber, StringFormat='Serial: {0}'}" Margin="0,0,0,2"/>
+                    <TextBlock Text="{Binding SelectedDrive.ReportedCapacityBytes, StringFormat='OS-reported size: {0} bytes'}" Margin="0,0,0,2"/>
+                    <TextBlock Text="{Binding SelectedDrive.FileSystemType, StringFormat='Formatted as: {0}', FallbackValue='Formatted as: (no mounted volume)', TargetNullValue='Formatted as: (no mounted volume)'}"/>
+                </StackPanel>
+            </ui:CardExpander>
+
+            <TextBlock Text="Drive Label / ID (for tracking)" FontWeight="SemiBold" Margin="0,0,0,6"/>
+            <ui:TextBox Text="{Binding DriveLabel, UpdateSourceTrigger=PropertyChanged}"
+                        PlaceholderText="e.g. Kingston-64GB-lot-A" Margin="0,0,0,16"/>
+
+            <TextBlock Text="Claimed Capacity (GB)" FontWeight="SemiBold" Margin="0,0,0,6"/>
+            <Grid Margin="0,0,0,4">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <ui:TextBox Grid.Column="0" Text="{Binding ClaimedCapacityGb, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,8,0"/>
+                <ui:Button Grid.Column="1" Content="Re-sync to OS-Reported Size" Command="{Binding UseOsReportedCapacityCommand}">
+                    <ui:Button.Icon>
+                        <ui:SymbolIcon Symbol="ArrowImport24"/>
+                    </ui:Button.Icon>
+                </ui:Button>
+            </Grid>
+            <TextBlock Text="Loaded automatically from what Windows reports when you pick a drive, but edit it freely — this is not proof of anything, since a counterfeit drive fakes the OS-reported size too. The whole point of the Testing tab is to check whether this number is actually true."
+                       Foreground="{DynamicResource TextFillColorTertiaryBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,20"/>
+
+            <TextBlock Text="Claimed Speed" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,4"/>
+            <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,12"
+                       Text="Manufacturers usually advertise read speed prominently on the box (e.g. &quot;up to 130 MB/s&quot;) since it's the more flattering number. Write speed is often lower, rarely advertised, and is usually where cheap or counterfeit controllers fail hardest once any cache runs out. Fill in whatever the packaging or online listing claims for each — leave a field at its default if the listing doesn't specify one."/>
+
+            <TextBlock Text="Claimed Read Speed (MB/s)" FontWeight="SemiBold" Margin="0,0,0,6"/>
+            <ui:TextBox Text="{Binding ClaimedReadSpeedMegabytesPerSecond, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,16"/>
+
+            <TextBlock Text="Claimed Write Speed (MB/s)" FontWeight="SemiBold" Margin="0,0,0,6"/>
+            <ui:TextBox Text="{Binding ClaimedWriteSpeedMegabytesPerSecond, UpdateSourceTrigger=PropertyChanged}"/>
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

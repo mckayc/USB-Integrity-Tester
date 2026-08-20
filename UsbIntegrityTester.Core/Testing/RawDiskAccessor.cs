@@ -3,6 +3,17 @@ using Microsoft.Win32.SafeHandles;
 
 namespace UsbIntegrityTester.Core.Testing;
 
+/// <summary>An I/O failure that captures the Win32 error code at the moment it occurred, so callers can act on it reliably.</summary>
+public sealed class Win32IOException : IOException
+{
+    public int ErrorCode { get; }
+
+    public Win32IOException(string message, int errorCode) : base($"{message} (Win32 error {errorCode}).")
+    {
+        ErrorCode = errorCode;
+    }
+}
+
 /// <summary>
 /// Sector-aligned, unbuffered access to a physical disk (\\.\PhysicalDriveN). Bypasses the
 /// Windows file cache (FILE_FLAG_NO_BUFFERING | FILE_FLAG_WRITE_THROUGH) so throughput and
@@ -27,7 +38,7 @@ public sealed class RawDiskAccessor : IDisposable
             Native.OPEN_EXISTING, Native.FILE_FLAG_NO_BUFFERING | Native.FILE_FLAG_WRITE_THROUGH, IntPtr.Zero);
 
         if (handle.IsInvalid)
-            throw new IOException($"Failed to open {physicalDrivePath} (Win32 error {Marshal.GetLastWin32Error()}).");
+            throw new Win32IOException($"Failed to open {physicalDrivePath}", Marshal.GetLastWin32Error());
 
         return new RawDiskAccessor(handle);
     }
@@ -40,7 +51,7 @@ public sealed class RawDiskAccessor : IDisposable
         {
             if (!Native.DeviceIoControl(_handle, Native.IOCTL_DISK_GET_LENGTH_INFO, IntPtr.Zero, 0,
                     buffer, size, out _, IntPtr.Zero))
-                throw new IOException($"IOCTL_DISK_GET_LENGTH_INFO failed (Win32 error {Marshal.GetLastWin32Error()}).");
+                throw new Win32IOException("IOCTL_DISK_GET_LENGTH_INFO failed", Marshal.GetLastWin32Error());
 
             return (ulong)Marshal.ReadInt64(buffer);
         }
@@ -54,13 +65,16 @@ public sealed class RawDiskAccessor : IDisposable
     public void ReadBlock(ulong byteOffset, byte[] destination, int length)
     {
         ValidateAlignment(byteOffset, length);
-        SeekTo(byteOffset);
 
         var handleBuf = Marshal.AllocHGlobal(length);
         try
         {
-            if (!Native.ReadFile(_handle, handleBuf, length, out var bytesRead, IntPtr.Zero) || bytesRead != length)
-                throw new IOException($"ReadFile failed at offset {byteOffset} (Win32 error {Marshal.GetLastWin32Error()}).");
+            RetryOnDeviceNotReady(() =>
+            {
+                SeekTo(byteOffset);
+                if (!Native.ReadFile(_handle, handleBuf, length, out var bytesRead, IntPtr.Zero) || bytesRead != length)
+                    throw new Win32IOException($"ReadFile failed at offset {byteOffset}", Marshal.GetLastWin32Error());
+            });
 
             Marshal.Copy(handleBuf, destination, 0, length);
         }
@@ -74,18 +88,43 @@ public sealed class RawDiskAccessor : IDisposable
     public void WriteBlock(ulong byteOffset, byte[] source, int length)
     {
         ValidateAlignment(byteOffset, length);
-        SeekTo(byteOffset);
 
         var handleBuf = Marshal.AllocHGlobal(length);
         try
         {
             Marshal.Copy(source, 0, handleBuf, length);
-            if (!Native.WriteFile(_handle, handleBuf, length, out var bytesWritten, IntPtr.Zero) || bytesWritten != length)
-                throw new IOException($"WriteFile failed at offset {byteOffset} (Win32 error {Marshal.GetLastWin32Error()}).");
+            RetryOnDeviceNotReady(() =>
+            {
+                SeekTo(byteOffset);
+                if (!Native.WriteFile(_handle, handleBuf, length, out var bytesWritten, IntPtr.Zero) || bytesWritten != length)
+                    throw new Win32IOException($"WriteFile failed at offset {byteOffset}", Marshal.GetLastWin32Error());
+            });
         }
         finally
         {
             Marshal.FreeHGlobal(handleBuf);
+        }
+    }
+
+    // Cheap USB flash controllers commonly report ERROR_NOT_READY (21) for a brief moment right
+    // after the volume is dismounted/locked, while the controller finishes internal housekeeping.
+    // It's transient, not a real failure, so a short retry clears it up almost every time.
+    private const int ErrorNotReady = 21;
+    private const int MaxNotReadyRetries = 8;
+
+    private static void RetryOnDeviceNotReady(Action action)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                action();
+                return;
+            }
+            catch (Win32IOException ex) when (ex.ErrorCode == ErrorNotReady && attempt < MaxNotReadyRetries)
+            {
+                Thread.Sleep(200 * attempt);
+            }
         }
     }
 
@@ -100,7 +139,7 @@ public sealed class RawDiskAccessor : IDisposable
     private void SeekTo(ulong byteOffset)
     {
         if (!Native.SetFilePointerEx(_handle, (long)byteOffset, IntPtr.Zero, Native.FILE_BEGIN))
-            throw new IOException($"Seek to {byteOffset} failed (Win32 error {Marshal.GetLastWin32Error()}).");
+            throw new Win32IOException($"Seek to {byteOffset} failed", Marshal.GetLastWin32Error());
     }
 
     public void Dispose() => _handle.Dispose();

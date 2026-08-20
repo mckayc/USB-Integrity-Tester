@@ -1,12 +1,93 @@
-﻿<Window x:Class="UsbIntegrityTester.App.MainWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:local="clr-namespace:UsbIntegrityTester.App"
-        mc:Ignorable="d"
-        Title="MainWindow" Height="450" Width="800">
-    <Grid>
+<ui:FluentWindow x:Class="UsbIntegrityTester.App.MainWindow"
+                 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                 xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                 xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                 xmlns:vm="clr-namespace:UsbIntegrityTester.App.ViewModels"
+                 xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                 mc:Ignorable="d"
+                 Title="USB Integrity Tester" Height="720" Width="1080"
+                 ExtendsContentIntoTitleBar="True"
+                 WindowBackdropType="Mica"
+                 WindowCornerPreference="Round">
+    <ui:FluentWindow.DataContext>
+        <vm:MainViewModel />
+    </ui:FluentWindow.DataContext>
 
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="USB Integrity Tester">
+            <ui:TitleBar.Icon>
+                <ui:SymbolIcon Symbol="UsbStick24"/>
+            </ui:TitleBar.Icon>
+            <ui:TitleBar.TrailingContent>
+                <ui:ToggleSwitch x:Name="DarkModeToggle" OnContent="Dark" OffContent="Light"
+                                  IsChecked="True" Margin="0,0,12,0" Click="DarkModeToggle_Click"/>
+            </ui:TitleBar.TrailingContent>
+        </ui:TitleBar>
+
+        <ui:NavigationView x:Name="RootNavigation" Grid.Row="1"
+                           PaneDisplayMode="Left" OpenPaneLength="220"
+                           IsBackButtonVisible="Collapsed">
+            <ui:NavigationView.MenuItems>
+                <ui:NavigationViewItem Content="Claimed Stats" Tag="ClaimedStats" Click="NavigationItem_Click">
+                    <ui:NavigationViewItem.Icon>
+                        <ui:SymbolIcon Symbol="ClipboardTaskListLtr24"/>
+                    </ui:NavigationViewItem.Icon>
+                </ui:NavigationViewItem>
+                <ui:NavigationViewItem Content="USB Connections" Tag="UsbConnections" Click="NavigationItem_Click">
+                    <ui:NavigationViewItem.Icon>
+                        <ui:SymbolIcon Symbol="PlugConnected24"/>
+                    </ui:NavigationViewItem.Icon>
+                </ui:NavigationViewItem>
+                <ui:NavigationViewItem Content="Testing" Tag="Testing" Click="NavigationItem_Click">
+                    <ui:NavigationViewItem.Icon>
+                        <ui:SymbolIcon Symbol="TopSpeed24"/>
+                    </ui:NavigationViewItem.Icon>
+                </ui:NavigationViewItem>
+                <ui:NavigationViewItem Content="Report" Tag="Report" Click="NavigationItem_Click">
+                    <ui:NavigationViewItem.Icon>
+                        <ui:SymbolIcon Symbol="ChartMultiple24"/>
+                    </ui:NavigationViewItem.Icon>
+                </ui:NavigationViewItem>
+                <ui:NavigationViewItem Content="History" Tag="History" Click="NavigationItem_Click">
+                    <ui:NavigationViewItem.Icon>
+                        <ui:SymbolIcon Symbol="DocumentBulletListClock20"/>
+                    </ui:NavigationViewItem.Icon>
+                </ui:NavigationViewItem>
+                <ui:NavigationViewItem Content="Logs" Tag="Logs" Click="NavigationItem_Click">
+                    <ui:NavigationViewItem.Icon>
+                        <ui:SymbolIcon Symbol="History24"/>
+                    </ui:NavigationViewItem.Icon>
+                </ui:NavigationViewItem>
+            </ui:NavigationView.MenuItems>
+        </ui:NavigationView>
+
+        <!--
+            Custom-built confirmation overlay instead of ui:ContentDialog — that control turned out
+            to have inconsistent Visibility/backdrop cleanup behavior (rendered on startup, then a
+            ghost card after being hidden). Plain elements here are fully under our control.
+        -->
+        <Grid x:Name="ConfirmOverlay" Grid.Row="0" Grid.RowSpan="2" Visibility="Collapsed" Background="#AA000000">
+            <Border Background="{DynamicResource ApplicationBackgroundBrush}"
+                    BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}" BorderThickness="1"
+                    CornerRadius="8" Padding="24" MaxWidth="440"
+                    HorizontalAlignment="Center" VerticalAlignment="Center">
+                <StackPanel>
+                    <TextBlock x:Name="ConfirmOverlayTitle" FontSize="18" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextFillColorPrimaryBrush}" Margin="0,0,0,12"/>
+                    <TextBlock x:Name="ConfirmOverlayMessage" TextWrapping="Wrap"
+                               Foreground="{DynamicResource TextFillColorPrimaryBrush}" Margin="0,0,0,20"/>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <ui:Button Content="Cancel" Click="ConfirmOverlayCancel_Click" Margin="0,0,8,0" Padding="16,6"/>
+                        <ui:Button Content="Continue" Appearance="Danger" Click="ConfirmOverlayContinue_Click" Padding="16,6"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
     </Grid>
-</Window>
+</ui:FluentWindow>

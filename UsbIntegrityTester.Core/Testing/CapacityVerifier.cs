@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace UsbIntegrityTester.Core.Testing;
 
 public sealed record CapacityVerificationResult
@@ -8,6 +10,16 @@ public sealed record CapacityVerificationResult
     public required int BlocksTested { get; init; }
     public required int BlocksFailed { get; init; }
     public bool AllBlocksPassed => BlocksFailed == 0;
+
+    /// <summary>
+    /// Average write throughput measured incidentally during the write pass — since this test
+    /// already writes across the whole scanned region (not just the small capped region the
+    /// dedicated speed test reuses), it doubles as a second, independent write measurement.
+    /// </summary>
+    public double WriteMegabytesPerSecond { get; init; }
+
+    /// <summary>Same idea for the verify pass, which reads every tested block back.</summary>
+    public double ReadMegabytesPerSecond { get; init; }
 }
 
 /// <summary>
@@ -19,20 +31,26 @@ public sealed record CapacityVerificationResult
 /// </summary>
 public sealed class CapacityVerifier
 {
-    public async Task<CapacityVerificationResult> WriteAndVerifyAsync(
+    private const int SampleWindowBlocks = 8;
+
+    public Task<CapacityVerificationResult> WriteAndVerifyAsync(
         RawDiskAccessor accessor,
         ulong totalBytes,
         int blockSize,
         ulong seed,
         IReadOnlyList<ulong> blockOffsets,
         IProgress<TestProgress>? progress,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken) => Task.Run(() =>
     {
         var buffer = new byte[blockSize];
         var totalWork = (ulong)blockOffsets.Count * (ulong)blockSize * 2; // write pass + verify pass
         ulong workDone = 0;
 
         // Write pass: every block gets data derived from (seed, its own offset).
+        var writeStopwatch = Stopwatch.StartNew();
+        var windowStopwatch = Stopwatch.StartNew();
+        var blocksInWindow = 0;
+
         foreach (var offset in blockOffsets)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -40,13 +58,31 @@ public sealed class CapacityVerifier
             accessor.WriteBlock(offset, buffer, blockSize);
 
             workDone += (ulong)blockSize;
+            blocksInWindow++;
+
+            double? currentMbPerSec = null;
+            if (blocksInWindow >= SampleWindowBlocks)
+            {
+                var windowSeconds = windowStopwatch.Elapsed.TotalSeconds;
+                var windowMegabytes = blocksInWindow * blockSize / 1_000_000.0;
+                currentMbPerSec = windowSeconds > 0 ? windowMegabytes / windowSeconds : 0;
+                blocksInWindow = 0;
+                windowStopwatch.Restart();
+            }
+
             progress?.Report(new TestProgress
             {
                 Phase = TestPhase.WritingCapacityPattern,
                 BytesProcessed = workDone,
                 TotalBytes = totalWork,
+                CurrentThroughputMegabytesPerSecond = currentMbPerSec,
             });
         }
+
+        var writeElapsedSeconds = writeStopwatch.Elapsed.TotalSeconds;
+        var writeMegabytesPerSecond = writeElapsedSeconds > 0
+            ? blockOffsets.Count * blockSize / 1_000_000.0 / writeElapsedSeconds
+            : 0;
 
         // Verify pass: read each block back and confirm it holds *its own* expected data.
         var expected = new byte[blockSize];
@@ -54,6 +90,10 @@ public sealed class CapacityVerifier
         var blocksFailed = 0;
         ulong verifiedGoodBytes = 0;
         var sawFailure = false;
+
+        var readStopwatch = Stopwatch.StartNew();
+        windowStopwatch.Restart();
+        blocksInWindow = 0;
 
         var orderedOffsets = blockOffsets.OrderBy(o => o).ToList();
         foreach (var offset in orderedOffsets)
@@ -73,13 +113,32 @@ public sealed class CapacityVerifier
             }
 
             workDone += (ulong)blockSize;
+            blocksInWindow++;
+
+            double? currentMbPerSec = null;
+            if (blocksInWindow >= SampleWindowBlocks)
+            {
+                var windowSeconds = windowStopwatch.Elapsed.TotalSeconds;
+                var windowMegabytes = blocksInWindow * blockSize / 1_000_000.0;
+                currentMbPerSec = windowSeconds > 0 ? windowMegabytes / windowSeconds : 0;
+                blocksInWindow = 0;
+                windowStopwatch.Restart();
+            }
+
             progress?.Report(new TestProgress
             {
                 Phase = TestPhase.VerifyingCapacityPattern,
                 BytesProcessed = workDone,
                 TotalBytes = totalWork,
+                BlocksFailedSoFar = blocksFailed,
+                CurrentThroughputMegabytesPerSecond = currentMbPerSec,
             });
         }
+
+        var readElapsedSeconds = readStopwatch.Elapsed.TotalSeconds;
+        var readMegabytesPerSecond = readElapsedSeconds > 0
+            ? orderedOffsets.Count * blockSize / 1_000_000.0 / readElapsedSeconds
+            : 0;
 
         return new CapacityVerificationResult
         {
@@ -87,8 +146,10 @@ public sealed class CapacityVerifier
             TotalBytesTested = totalBytes,
             BlocksTested = blockOffsets.Count,
             BlocksFailed = blocksFailed,
+            WriteMegabytesPerSecond = writeMegabytesPerSecond,
+            ReadMegabytesPerSecond = readMegabytesPerSecond,
         };
-    }
+    }, cancellationToken);
 
     /// <summary>Produces deterministic pseudo-random bytes derived from (seed, blockOffset), reproducible without storing test data.</summary>
     internal static void FillDeterministicBlock(byte[] buffer, ulong seed, ulong blockOffset)

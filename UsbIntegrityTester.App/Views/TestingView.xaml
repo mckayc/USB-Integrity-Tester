@@ -1,0 +1,322 @@
+<UserControl x:Class="UsbIntegrityTester.App.Views.TestingView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:UsbIntegrityTester.App.ViewModels"
+             xmlns:controls="clr-namespace:UsbIntegrityTester.App.Controls"
+             mc:Ignorable="d" d:DesignWidth="1000">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
+
+        <!-- One direction (Write, or Read/Verify) of a speed track: number + trend line. Used
+             twice per speed card, side by side, so write and read never share one line. -->
+        <DataTemplate x:Key="SpeedChannelTemplate" DataType="{x:Type vm:TestChannelViewModel}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <TextBlock Grid.Row="0" Text="{Binding Label}" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,2"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                <TextBlock Grid.Row="1" Text="{Binding CurrentThroughputText}" FontSize="22" FontWeight="Bold"
+                           Foreground="{Binding ThroughputBrush}"/>
+                <StackPanel Grid.Row="2" Margin="0,2,0,6">
+                    <TextBlock Text="{Binding AverageThroughputText}" FontSize="10"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                    <TextBlock Text="{Binding PeakThroughputText}" FontSize="10"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                </StackPanel>
+                <controls:Sparkline Grid.Row="3" Points="{Binding LivePoints}" StrokeThickness="2"
+                                     Stroke="{Binding ThroughputBrush}" Fill="{Binding ThroughputFillBrush}"/>
+            </Grid>
+        </DataTemplate>
+
+        <!-- Large/Small/Huge File cards: overall progress, then Write and Read side by side, each
+             with its own number and trend line. -->
+        <DataTemplate DataType="{x:Type vm:TestTrackViewModel}">
+            <Border Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"
+                    CornerRadius="8" Padding="16"
+                    Opacity="{Binding IsSelected, Converter={StaticResource BoolToCardOpacityConverter}}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="120"/>
+                    </Grid.RowDefinitions>
+
+                    <Grid Grid.Row="0" Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{Binding Title}" FontWeight="SemiBold" FontSize="14" TextWrapping="Wrap"/>
+                        <TextBlock Grid.Column="1" Text="{Binding StatusText}" FontSize="12" Margin="8,0,0,0"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                    </Grid>
+
+                    <ProgressBar Grid.Row="1" Height="4" Minimum="0" Maximum="1" Margin="0,0,0,12"
+                                 Value="{Binding ProgressFraction, Mode=OneWay}"/>
+
+                    <Grid Grid.Row="2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="16"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <ContentControl Grid.Column="0" Content="{Binding Primary}" ContentTemplate="{StaticResource SpeedChannelTemplate}"/>
+                        <ContentControl Grid.Column="2" Content="{Binding Secondary}" ContentTemplate="{StaticResource SpeedChannelTemplate}"/>
+                    </Grid>
+                </Grid>
+            </Border>
+        </DataTemplate>
+
+        <!-- Capacity Test card: instead of a throughput line, shows how much of the claimed
+             capacity has actually been written and verified so far — a fake-capacity drive stalls
+             partway across these bars instead of just showing a slow number. -->
+        <DataTemplate x:Key="CapacityCardTemplate" DataType="{x:Type vm:TestTrackViewModel}">
+            <Border Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"
+                    CornerRadius="8" Padding="16"
+                    Opacity="{Binding IsSelected, Converter={StaticResource BoolToCardOpacityConverter}}">
+                <StackPanel>
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{Binding Title}" FontWeight="SemiBold" FontSize="14" TextWrapping="Wrap"/>
+                        <TextBlock Grid.Column="1" Text="{Binding StatusText}" FontSize="12" Margin="8,0,0,0"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                    </Grid>
+
+                    <ProgressBar Height="4" Minimum="0" Maximum="1" Margin="0,0,0,14"
+                                 Value="{Binding ProgressFraction, Mode=OneWay}"/>
+
+                    <!-- Write pass -->
+                    <Grid Margin="0,0,0,4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{Binding Primary.Label}" FontSize="12" FontWeight="SemiBold"/>
+                        <TextBlock Grid.Column="1" Text="{Binding Primary.CurrentThroughputText}" FontSize="12"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                    </Grid>
+                    <Grid Height="12" Margin="0,0,0,2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="{Binding Primary.ProgressFraction, Converter={StaticResource FractionToStarConverter}}"/>
+                            <ColumnDefinition Width="{Binding Primary.RemainderFraction, Converter={StaticResource FractionToStarConverter}}"/>
+                        </Grid.ColumnDefinitions>
+                        <Border Grid.Column="0" Background="{Binding Primary.ThroughputBrush}" CornerRadius="3"/>
+                        <Border Grid.Column="1" Background="{DynamicResource ControlFillColorDefaultBrush}" CornerRadius="3" Margin="2,0,0,0"/>
+                    </Grid>
+                    <TextBlock Text="{Binding Primary.DetailText}" FontSize="11" Margin="0,0,0,14" TextWrapping="Wrap"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+
+                    <!-- Verify pass -->
+                    <Grid Margin="0,0,0,4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{Binding Secondary.Label}" FontSize="12" FontWeight="SemiBold"/>
+                        <TextBlock Grid.Column="1" Text="{Binding Secondary.CurrentThroughputText}" FontSize="12"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                    </Grid>
+                    <Grid Height="12" Margin="0,0,0,2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="{Binding Secondary.ProgressFraction, Converter={StaticResource FractionToStarConverter}}"/>
+                            <ColumnDefinition Width="{Binding Secondary.RemainderFraction, Converter={StaticResource FractionToStarConverter}}"/>
+                        </Grid.ColumnDefinitions>
+                        <Border Grid.Column="0" Background="{Binding Secondary.ThroughputBrush}" CornerRadius="3"/>
+                        <Border Grid.Column="1" Background="{DynamicResource ControlFillColorDefaultBrush}" CornerRadius="3" Margin="2,0,0,0"/>
+                    </Grid>
+                    <TextBlock Text="{Binding Secondary.DetailText}" FontSize="11" TextWrapping="Wrap"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+
+                    <TextBlock Text="{Binding FailedBlocksText}" FontSize="12" FontWeight="SemiBold" Margin="0,10,0,0"
+                               Foreground="#E74C3C" TextWrapping="Wrap"
+                               Visibility="{Binding FailedBlocksText, Converter={StaticResource EmptyStringToVisibilityConverter}}"/>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+    </UserControl.Resources>
+    <Grid>
+        <TabControl>
+            <TabItem Header="Test Setup">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="24" MaxWidth="640" HorizontalAlignment="Left">
+                        <TextBlock Text="Testing" FontSize="24" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                        <TextBlock Text="Choose how the test accesses the drive, then your tests and settings, then run."
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,20" TextWrapping="Wrap"/>
+
+                        <ui:CardExpander Header="Test Mode" IsExpanded="True" Margin="0,0,0,12">
+                            <ui:CardExpander.Icon>
+                                <ui:SymbolIcon Symbol="Settings24"/>
+                            </ui:CardExpander.Icon>
+                            <StackPanel Margin="0,8,0,0">
+                                <RadioButton GroupName="TestMode" Margin="0,0,0,2"
+                                             IsChecked="{Binding TestMode, Converter={StaticResource TestModeFileConverter}}">
+                                    <TextBlock Text="File Mode — writes real files, visible live in Explorer" TextWrapping="Wrap"/>
+                                </RadioButton>
+                                <TextBlock Text="Recommended. Keeps the drive mounted so you can watch test files appear as they're written — great for showing a test in progress."
+                                           Foreground="{DynamicResource TextFillColorTertiaryBrush}" FontSize="11" TextWrapping="Wrap" Margin="24,0,0,10"/>
+
+                                <RadioButton GroupName="TestMode" Margin="0,0,0,2"
+                                             IsChecked="{Binding TestMode, Converter={StaticResource TestModeRawConverter}}">
+                                    <TextBlock Text="Raw Mode — direct sector access, most thorough" TextWrapping="Wrap"/>
+                                </RadioButton>
+                                <TextBlock Text="Dismounts the volume for the whole test — nothing visible in Explorer until it finishes. Always erases all data. Use this if you want the most exhaustive possible check."
+                                           Foreground="{DynamicResource TextFillColorTertiaryBrush}" FontSize="11" TextWrapping="Wrap" Margin="24,0,0,12"/>
+
+                                <StackPanel Visibility="{Binding TestMode, Converter={StaticResource TestModeToFileVisibilityConverter}}">
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Clear existing data first" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                        <ui:ToggleSwitch Grid.Column="1" IsChecked="{Binding ClearExistingData}"/>
+                                    </Grid>
+                                    <TextBlock Text="On: deletes everything already on the drive so the test can use nearly its full capacity. Off: only writes into current free space and leaves your files alone — but then the test can only ever confirm as much capacity as is currently free, and can't check space your existing files occupy."
+                                               Foreground="{DynamicResource TextFillColorTertiaryBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,12"/>
+
+                                    <TextBlock Text="When to remove test files" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                                    <StackPanel>
+                                        <RadioButton Content="Immediately after the test" GroupName="Cleanup" Margin="0,0,0,4"
+                                                     IsChecked="{Binding CleanupPolicy, Converter={StaticResource CleanupDeleteAfterTestConverter}}"/>
+                                        <RadioButton Content="When the app closes (so you can inspect them first)" GroupName="Cleanup" Margin="0,0,0,4"
+                                                     IsChecked="{Binding CleanupPolicy, Converter={StaticResource CleanupDeleteOnAppCloseConverter}}"/>
+                                        <RadioButton Content="Never automatically — I'll clean up manually" GroupName="Cleanup" Margin="0,0,0,8"
+                                                     IsChecked="{Binding CleanupPolicy, Converter={StaticResource CleanupKeepUntilManualConverter}}"/>
+                                    </StackPanel>
+                                    <ui:Button Content="Clean Up Test Files Now" Command="{Binding CleanUpTestFilesNowCommand}"
+                                               HorizontalAlignment="Left" Padding="8,4">
+                                        <ui:Button.Icon>
+                                            <ui:SymbolIcon Symbol="Delete24"/>
+                                        </ui:Button.Icon>
+                                    </ui:Button>
+                                </StackPanel>
+                            </StackPanel>
+                        </ui:CardExpander>
+
+                        <ui:CardExpander Header="Capacity Test" IsExpanded="True" Margin="0,0,0,12">
+                            <ui:CardExpander.Icon>
+                                <ui:SymbolIcon Symbol="ClipboardTaskListLtr24"/>
+                            </ui:CardExpander.Icon>
+                            <StackPanel Margin="0,8,0,0">
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="Run capacity test" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                    <ui:ToggleSwitch Grid.Column="1" IsChecked="{Binding RunCapacityTest}"/>
+                                </Grid>
+                                <TextBlock Text="Writes and reads back unique data across the claimed capacity to prove every address is real, writable storage — this is what catches fake-capacity drives."
+                                           Foreground="{DynamicResource TextFillColorTertiaryBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,12"/>
+
+                                <TextBlock Text="Scan Depth" FontWeight="SemiBold" Margin="0,0,0,8"
+                                           IsEnabled="{Binding RunCapacityTest}"/>
+                                <StackPanel IsEnabled="{Binding RunCapacityTest}">
+                                    <RadioButton Content="Quick — a few hundred sampled blocks, fast" GroupName="ScanDepth" Margin="0,0,0,4"
+                                                 IsChecked="{Binding CapacityScanDepth, Converter={StaticResource ScanDepthQuickConverter}}"/>
+                                    <RadioButton Content="Standard — ~5% of blocks, evenly spread" GroupName="ScanDepth" Margin="0,0,0,4"
+                                                 IsChecked="{Binding CapacityScanDepth, Converter={StaticResource ScanDepthStandardConverter}}"/>
+                                    <RadioButton Content="Full — every single block, slow but exhaustive" GroupName="ScanDepth"
+                                                 IsChecked="{Binding CapacityScanDepth, Converter={StaticResource ScanDepthFullConverter}}"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </ui:CardExpander>
+
+                        <ui:CardExpander Header="Speed Test" IsExpanded="True" Margin="0,0,0,20">
+                            <ui:CardExpander.Icon>
+                                <ui:SymbolIcon Symbol="TopSpeed24"/>
+                            </ui:CardExpander.Icon>
+                            <StackPanel Margin="0,8,0,0">
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="Run speed test" VerticalAlignment="Center"/>
+                                    <ui:ToggleSwitch Grid.Column="1" IsChecked="{Binding RunSpeedTest}"/>
+                                </Grid>
+                                <TextBlock Text="Choose which workload(s) to measure — real-world USB drives are often much slower copying many small files than one big one."
+                                           Foreground="{DynamicResource TextFillColorTertiaryBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,12"/>
+
+                                <StackPanel IsEnabled="{Binding RunSpeedTest}">
+                                    <CheckBox IsChecked="{Binding RunLargeFileSpeedTest}" Margin="0,0,0,2">
+                                        <TextBlock Text="Large file (1 MB blocks)" TextWrapping="Wrap"/>
+                                    </CheckBox>
+                                    <TextBlock Text="Simulates copying one big file — the best-case number drives are marketed on."
+                                               Foreground="{DynamicResource TextFillColorTertiaryBrush}" FontSize="11" TextWrapping="Wrap" Margin="24,0,0,10"/>
+
+                                    <CheckBox IsChecked="{Binding RunSmallFileSpeedTest}" Margin="0,0,0,2">
+                                        <TextBlock Text="Small file (4 KB blocks)" TextWrapping="Wrap"/>
+                                    </CheckBox>
+                                    <TextBlock Text="Simulates copying many small files — often where cheap controllers and thin caches fall apart, and rarely what's advertised."
+                                               Foreground="{DynamicResource TextFillColorTertiaryBrush}" FontSize="11" TextWrapping="Wrap" Margin="24,0,0,10"/>
+
+                                    <CheckBox IsChecked="{Binding RunHugeFileSpeedTest}" Margin="0,0,0,2">
+                                        <TextBlock Text="Huge file (100 MB blocks)" TextWrapping="Wrap"/>
+                                    </CheckBox>
+                                    <TextBlock Text="Simulates copying one very large file (video export, disk image). Off by default — adds real time to the test and needs at least 100 MB of verified capacity."
+                                               Foreground="{DynamicResource TextFillColorTertiaryBrush}" FontSize="11" TextWrapping="Wrap" Margin="24,0,0,0"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </ui:CardExpander>
+
+                        <TextBlock Text="Head to the Run Test tab to start and watch progress." FontStyle="Italic"
+                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="Run Test">
+                <Grid>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <Grid Margin="24">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,20">
+                                <ui:Button Content="Start Test" Command="{Binding StartTestCommand}" Appearance="Primary"
+                                           IsEnabled="{Binding IsTestRunning, Converter={StaticResource InverseBoolConverter}}"
+                                           Margin="0,0,8,0" Padding="20,10" FontSize="15">
+                                    <ui:Button.Icon>
+                                        <ui:SymbolIcon Symbol="Play24"/>
+                                    </ui:Button.Icon>
+                                </ui:Button>
+                                <ui:Button Content="Cancel" Command="{Binding CancelTestCommand}"
+                                           IsEnabled="{Binding IsTestRunning}" Padding="20,10" FontSize="15"/>
+                                <TextBlock Text="{Binding ProgressText}" VerticalAlignment="Center" Margin="16,0,0,0"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
+                            </StackPanel>
+
+                            <UniformGrid Grid.Row="1" Columns="2" Rows="2">
+                                <ContentControl Content="{Binding CapacityTrack}" ContentTemplate="{StaticResource CapacityCardTemplate}" Margin="0,0,12,12"/>
+                                <ContentControl Content="{Binding LargeFileTrack}" Margin="0,0,0,12"/>
+                                <ContentControl Content="{Binding SmallFileTrack}" Margin="0,0,12,0"/>
+                                <ContentControl Content="{Binding HugeFileTrack}"/>
+                            </UniformGrid>
+                        </Grid>
+                    </ScrollViewer>
+
+                    <ProgressBar VerticalAlignment="Top" Height="4" Minimum="0" Maximum="1"
+                                 Value="{Binding ProgressFraction, Mode=OneWay}"/>
+                </Grid>
+            </TabItem>
+        </TabControl>
+
+        <Border x:Name="FakeBlockFlashOverlay" Background="#E74C3C" Opacity="0" IsHitTestVisible="False"/>
+    </Grid>
+</UserControl>

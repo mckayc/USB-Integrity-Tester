@@ -32,7 +32,11 @@ public static class UsbLinkSpeedExtensions
         UsbLinkSpeed.Full12Mbps => "USB 1.1 Full Speed (12 Mbps)",
         UsbLinkSpeed.High480Mbps => "USB 2.0 High Speed (480 Mbps)",
         UsbLinkSpeed.Super5Gbps => "USB 3.2 Gen 1 (5 Gbps)",
-        UsbLinkSpeed.SuperPlus10Gbps => "USB 3.2 Gen 2 (10 Gbps)",
+        // Windows' IOCTL_USB_GET_NODE_CONNECTION_INFORMATION_EX_V2 can confirm "SuperSpeedPlus or
+        // higher" but doesn't expose negotiated lane count, so Gen 2 (10 Gbps) and Gen 2x2
+        // (20 Gbps) can't be told apart without reading the device's BOS descriptor — out of
+        // scope for now. SuperPlus10Gbps is the value auto-detection reports for either case.
+        UsbLinkSpeed.SuperPlus10Gbps => "USB 3.2 Gen 2 or faster (10+ Gbps)",
         UsbLinkSpeed.SuperPlus20Gbps => "USB 3.2 Gen 2x2 (20 Gbps)",
         _ => "Unknown",
     };

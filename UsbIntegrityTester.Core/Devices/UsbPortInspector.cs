@@ -10,38 +10,167 @@ namespace UsbIntegrityTester.Core.Devices;
 /// "USB 3.0 port" from "USB 3.0 port with a USB 2.0 hub silently in the path."
 /// </summary>
 /// <remarks>
-/// Distinguishes Low/Full/High/Super speed reliably. Disambiguating SuperSpeed Gen1 vs
-/// Gen2 vs Gen2x2 requires IOCTL_USB_GET_NODE_CONNECTION_INFORMATION_EX_V2, which is a
-/// reasonable next step but out of scope for the initial scaffold — for now Gen2+ links
-/// report as Super5Gbps.
+/// Distinguishes Low/Full/High/Super-or-higher reliably from the base EX IOCTL, then uses
+/// IOCTL_USB_GET_NODE_CONNECTION_INFORMATION_EX_V2 to tell Gen 1 (5 Gbps) apart from Gen 2-or-
+/// higher (10/20 Gbps). It cannot tell Gen 2 (10 Gbps) apart from Gen 2x2 (20 Gbps) — that needs
+/// the device's SuperSpeedPlus BOS descriptor, which this doesn't read.
 /// </remarks>
+public sealed record UsbDeviceDetails
+{
+    public string? VendorId { get; init; }
+    public string? ProductId { get; init; }
+    public string? DriverServiceName { get; init; }
+    public required string TransportDescription { get; init; }
+
+    /// <summary>How many hub layers between the drive and the root hub — 0 means plugged straight into a root port.</summary>
+    public required int HubHopsFromRoot { get; init; }
+}
+
 public static class UsbPortInspector
 {
-    public static UsbLinkSpeed? GetNegotiatedLinkSpeed(int physicalDriveIndex)
+    /// <param name="log">Optional diagnostic sink — reports which step succeeded/failed, since this
+    /// walk has several points where Windows' device tree can legitimately not resolve.</param>
+    public static UsbLinkSpeed? GetNegotiatedLinkSpeed(int physicalDriveIndex, Action<string>? log = null)
+    {
+        var pnpDeviceId = GetDiskPnpDeviceId(physicalDriveIndex);
+        if (pnpDeviceId is null)
+        {
+            log?.Invoke($"No WMI PNPDeviceID found for PhysicalDrive{physicalDriveIndex}.");
+            return null;
+        }
+        log?.Invoke($"PNPDeviceID: {pnpDeviceId}");
+
+        if (Native.CM_Locate_DevNodeW(out var diskDevInst, pnpDeviceId, 0) != Native.CR_SUCCESS)
+        {
+            log?.Invoke("CM_Locate_DevNodeW failed to resolve a devnode for that PNPDeviceID.");
+            return null;
+        }
+
+        // Walk up from the disk devnode to the USB device node (USB\VID_xxxx&PID_xxxx\...).
+        var usbDevInst = FindAncestorUsbDeviceNode(diskDevInst, log);
+        if (usbDevInst is null)
+        {
+            log?.Invoke("Could not find a USB\\ device node within 6 levels above the disk in the device tree.");
+            return null;
+        }
+
+        var portNumber = GetDevNodeAddress(usbDevInst.Value);
+        if (portNumber is null)
+        {
+            log?.Invoke("CM_Get_DevNode_Registry_PropertyW(CM_DRP_ADDRESS) failed — couldn't read the USB device's port number.");
+            return null;
+        }
+        log?.Invoke($"USB device is on hub port {portNumber}.");
+
+        if (Native.CM_Get_Parent(out var hubDevInst, usbDevInst.Value, 0) != Native.CR_SUCCESS)
+        {
+            log?.Invoke("CM_Get_Parent failed to find the hub devnode above the USB device node.");
+            return null;
+        }
+
+        var hubInstanceId = GetDeviceId(hubDevInst);
+        if (hubInstanceId is null)
+        {
+            log?.Invoke("CM_Get_Device_IDW failed to resolve the hub's instance ID.");
+            return null;
+        }
+        log?.Invoke($"Hub instance ID: {hubInstanceId}");
+
+        var hubPath = FindHubDeviceInterfacePath(hubInstanceId);
+        if (hubPath is null)
+        {
+            log?.Invoke("Could not find a GUID_DEVINTERFACE_USB_HUB device interface path matching that hub instance ID — is it a root hub with a driver that doesn't expose one?");
+            return null;
+        }
+        log?.Invoke($"Hub device path: {hubPath}");
+
+        var speed = QueryLinkSpeed(hubPath, portNumber.Value, log);
+        log?.Invoke(speed is null
+            ? "IOCTL_USB_GET_NODE_CONNECTION_INFORMATION_EX failed on the hub handle (try running as Administrator)."
+            : $"Reported speed: {speed}.");
+
+        return speed;
+    }
+
+    /// <summary>
+    /// Extra diagnostic info beyond raw link speed: vendor/product ID, storage driver (which tells
+    /// you whether the drive uses UAS — USB Attached SCSI, faster with command queuing — or the
+    /// older BOT/Bulk-Only Transport protocol), and how many hub hops it's behind the root.
+    /// </summary>
+    public static UsbDeviceDetails? GetDeviceDetails(int physicalDriveIndex, Action<string>? log = null)
     {
         var pnpDeviceId = GetDiskPnpDeviceId(physicalDriveIndex);
         if (pnpDeviceId is null) return null;
 
-        if (Native.CM_Locate_DevNodeW(out var diskDevInst, pnpDeviceId, 0) != Native.CR_SUCCESS)
-            return null;
+        if (Native.CM_Locate_DevNodeW(out var diskDevInst, pnpDeviceId, 0) != Native.CR_SUCCESS) return null;
 
-        // Walk up from the disk devnode to the USB device node (USB\VID_xxxx&PID_xxxx\...).
-        var usbDevInst = FindAncestorUsbDeviceNode(diskDevInst);
+        var usbDevInst = FindAncestorUsbDeviceNode(diskDevInst, log);
         if (usbDevInst is null) return null;
 
-        var portNumber = GetDevNodeAddress(usbDevInst.Value);
-        if (portNumber is null) return null;
+        var usbInstanceId = GetDeviceId(usbDevInst.Value);
+        if (usbInstanceId is null) return null;
 
-        if (Native.CM_Get_Parent(out var hubDevInst, usbDevInst.Value, 0) != Native.CR_SUCCESS)
-            return null;
+        var vidMatch = System.Text.RegularExpressions.Regex.Match(usbInstanceId, @"VID_([0-9A-Fa-f]{4})");
+        var pidMatch = System.Text.RegularExpressions.Regex.Match(usbInstanceId, @"PID_([0-9A-Fa-f]{4})");
 
-        var hubInstanceId = GetDeviceId(hubDevInst);
-        if (hubInstanceId is null) return null;
+        var driverInfName = GetDriverInfName(usbInstanceId);
+        log?.Invoke($"Storage driver INF: {driverInfName ?? "(not found)"}");
 
-        var hubPath = FindHubDeviceInterfacePath(hubInstanceId);
-        if (hubPath is null) return null;
+        return new UsbDeviceDetails
+        {
+            VendorId = vidMatch.Success ? vidMatch.Groups[1].Value.ToUpperInvariant() : null,
+            ProductId = pidMatch.Success ? pidMatch.Groups[1].Value.ToUpperInvariant() : null,
+            DriverServiceName = driverInfName,
+            TransportDescription = DescribeTransport(driverInfName),
+            HubHopsFromRoot = CountHubHops(usbDevInst.Value),
+        };
+    }
 
-        return QueryLinkSpeed(hubPath, portNumber.Value);
+    private static string? GetDriverInfName(string deviceInstanceId)
+    {
+        // Win32_PnPSignedDriver has no "Service" property (that's Win32_SystemDriver) — the
+        // driver identity here comes from InfName instead ("usbstor.inf" = BOT, "uaspstor.inf" =
+        // UAS). Also: a plain WHERE DeviceID='...' equality throws "Invalid query" for these
+        // backslash-containing instance IDs no matter how the backslashes are escaped (verified
+        // directly against the live WMI provider) — a LIKE match on the unique tail after the
+        // last backslash (the device's serial number) sidesteps the problem entirely.
+        var tail = deviceInstanceId[(deviceInstanceId.LastIndexOf('\\') + 1)..];
+
+        using var searcher = new ManagementObjectSearcher(
+            $"SELECT InfName FROM Win32_PnPSignedDriver WHERE DeviceID LIKE '%{tail}'");
+
+        foreach (ManagementObject driver in searcher.Get())
+            return (string?)driver["InfName"];
+
+        return null;
+    }
+
+    private static string DescribeTransport(string? driverInfName) => driverInfName?.ToLowerInvariant() switch
+    {
+        "usbstor.inf" => "BOT (Bulk-Only Transport) — the older USB mass-storage protocol, one command in flight at a time.",
+        "uaspstor.inf" => "UAS (USB Attached SCSI) — faster, supports multiple commands in flight (command queuing).",
+        null => "Unknown — couldn't find a matching driver via WMI.",
+        _ => $"Unknown transport (driver INF: {driverInfName}) — likely a vendor-specific UAS driver.",
+    };
+
+    private static int CountHubHops(uint usbDevInst)
+    {
+        var hops = 0;
+        var current = usbDevInst;
+
+        for (var i = 0; i < 10; i++)
+        {
+            if (Native.CM_Get_Parent(out var parent, current, 0) != Native.CR_SUCCESS) break;
+
+            var id = GetDeviceId(parent);
+            if (id is null) break;
+            if (id.StartsWith("USB\\ROOT_HUB", StringComparison.OrdinalIgnoreCase)) break;
+
+            hops++;
+            current = parent;
+        }
+
+        return hops;
     }
 
     private static string? GetDiskPnpDeviceId(int physicalDriveIndex)
@@ -55,12 +184,13 @@ public static class UsbPortInspector
         return null;
     }
 
-    private static uint? FindAncestorUsbDeviceNode(uint startDevInst)
+    private static uint? FindAncestorUsbDeviceNode(uint startDevInst, Action<string>? log)
     {
         var current = startDevInst;
         for (var depth = 0; depth < 6; depth++)
         {
             var id = GetDeviceId(current);
+            log?.Invoke($"  ancestor[{depth}]: {id ?? "(unknown)"}");
             if (id is not null && id.StartsWith("USB\\", StringComparison.OrdinalIgnoreCase))
                 return current;
 
@@ -154,14 +284,30 @@ public static class UsbPortInspector
         return null;
     }
 
-    private static UsbLinkSpeed? QueryLinkSpeed(string hubDevicePath, uint portNumber)
+    private static UsbLinkSpeed? QueryLinkSpeed(string hubDevicePath, uint portNumber, Action<string>? log)
     {
         using var handle = Native.CreateFile(
             hubDevicePath, Native.GENERIC_WRITE, Native.FILE_SHARE_WRITE, IntPtr.Zero,
             Native.OPEN_EXISTING, 0, IntPtr.Zero);
 
-        if (handle.IsInvalid) return null;
+        if (handle.IsInvalid)
+        {
+            log?.Invoke($"CreateFile on hub path failed (Win32 error {Marshal.GetLastWin32Error()}).");
+            return null;
+        }
 
+        var baseSpeed = QueryBaseSpeed(handle, portNumber);
+        log?.Invoke($"Base IOCTL speed byte decoded as: {baseSpeed?.ToString() ?? "(IOCTL failed)"}.");
+        if (baseSpeed != UsbLinkSpeed.Super5Gbps) return baseSpeed;
+
+        // Base IOCTL can't distinguish SuperSpeed (Gen 1) from SuperSpeedPlus (Gen 2+) — refine it.
+        var isPlus = QueryIsSuperSpeedPlusOrHigher(handle, portNumber);
+        log?.Invoke($"EX_V2 SuperSpeedPlus-or-higher flag: {isPlus?.ToString() ?? "(IOCTL failed)"}.");
+        return isPlus == true ? UsbLinkSpeed.SuperPlus10Gbps : baseSpeed;
+    }
+
+    private static UsbLinkSpeed? QueryBaseSpeed(Microsoft.Win32.SafeHandles.SafeFileHandle handle, uint portNumber)
+    {
         const int bufferSize = 1024;
         var buffer = Marshal.AllocHGlobal(bufferSize);
         try
@@ -190,6 +336,31 @@ public static class UsbPortInspector
         }
     }
 
+    private static bool? QueryIsSuperSpeedPlusOrHigher(Microsoft.Win32.SafeHandles.SafeFileHandle handle, uint portNumber)
+    {
+        const int bufferSize = 16; // ConnectionIndex(4) + Length(4) + SupportedUsbProtocols(4) + Flags(4)
+        var buffer = Marshal.AllocHGlobal(bufferSize);
+        try
+        {
+            Marshal.WriteInt32(buffer, 0, (int)portNumber);
+            Marshal.WriteInt32(buffer, 4, bufferSize);
+            Marshal.WriteInt32(buffer, 8, Native.USB_PROTOCOLS_USB300_BIT); // request USB 3.0+ protocol info
+
+            var ok = Native.DeviceIoControl(
+                handle, Native.IOCTL_USB_GET_NODE_CONNECTION_INFORMATION_EX_V2,
+                buffer, bufferSize, buffer, bufferSize, out _, IntPtr.Zero);
+
+            if (!ok) return null;
+
+            var flags = Marshal.ReadInt32(buffer, 12);
+            return (flags & Native.FLAG_DEVICE_IS_OPERATING_AT_SUPERSPEEDPLUS_OR_HIGHER) != 0;
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
+
     private static class Native
     {
         public const int CR_SUCCESS = 0;
@@ -205,6 +376,15 @@ public static class UsbPortInspector
 
         // CTL_CODE(FILE_DEVICE_USB=0x22, 274, METHOD_BUFFERED=0, FILE_ANY_ACCESS=0)
         public const uint IOCTL_USB_GET_NODE_CONNECTION_INFORMATION_EX = 0x220448;
+
+        // CTL_CODE(FILE_DEVICE_USB=0x22, 279, METHOD_BUFFERED=0, FILE_ANY_ACCESS=0)
+        public const uint IOCTL_USB_GET_NODE_CONNECTION_INFORMATION_EX_V2 = 0x22045C;
+
+        // USB_PROTOCOLS bitfield: Usb110 = bit 0, Usb200 = bit 1, Usb300 = bit 2.
+        public const int USB_PROTOCOLS_USB300_BIT = 1 << 2;
+
+        // USB_NODE_CONNECTION_INFORMATION_EX_V2_FLAGS bitfield, bit 2 = DeviceIsOperatingAtSuperSpeedPlusOrHigher.
+        public const int FLAG_DEVICE_IS_OPERATING_AT_SUPERSPEEDPLUS_OR_HIGHER = 1 << 2;
 
         public static Guid GUID_DEVINTERFACE_USB_HUB = new("f18a0e88-c30c-11d0-8815-00a0c906bed8");
 

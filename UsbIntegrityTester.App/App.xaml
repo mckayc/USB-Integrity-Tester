@@ -1,9 +1,80 @@
-﻿<Application x:Class="UsbIntegrityTester.App.App"
+<Application x:Class="UsbIntegrityTester.App.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:UsbIntegrityTester.App"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:testing="clr-namespace:UsbIntegrityTester.Core.Testing;assembly=UsbIntegrityTester.Core"
              StartupUri="MainWindow.xaml">
     <Application.Resources>
-         
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ui:ThemesDictionary Theme="Dark" />
+                <ui:ControlsDictionary />
+            </ResourceDictionary.MergedDictionaries>
+
+            <local:InverseBoolConverter x:Key="InverseBoolConverter"/>
+            <local:BytesToGbConverter x:Key="BytesToGbConverter"/>
+            <local:UsbLinkSpeedDisplayConverter x:Key="UsbLinkSpeedDisplayConverter"/>
+            <local:ElevationSeverityConverter x:Key="ElevationSeverityConverter"/>
+            <local:DriveVerdictToBrushConverter x:Key="DriveVerdictToBrushConverter"/>
+            <local:DriveVerdictToIconConverter x:Key="DriveVerdictToIconConverter"/>
+            <local:LogLevelToBrushConverter x:Key="LogLevelToBrushConverter"/>
+            <local:LogLevelToIconConverter x:Key="LogLevelToIconConverter"/>
+            <local:EmptyStringToVisibilityConverter x:Key="EmptyStringToVisibilityConverter"/>
+            <local:BoolToCardOpacityConverter x:Key="BoolToCardOpacityConverter"/>
+            <local:FractionToStarConverter x:Key="FractionToStarConverter"/>
+            <local:EnumEqualityConverter x:Key="ScanDepthQuickConverter" Target="{x:Static testing:CapacityScanDepth.Quick}"/>
+            <local:EnumEqualityConverter x:Key="ScanDepthStandardConverter" Target="{x:Static testing:CapacityScanDepth.Standard}"/>
+            <local:EnumEqualityConverter x:Key="ScanDepthFullConverter" Target="{x:Static testing:CapacityScanDepth.Full}"/>
+            <local:EnumEqualityConverter x:Key="TestModeFileConverter" Target="{x:Static testing:TestMode.File}"/>
+            <local:TestModeToFileVisibilityConverter x:Key="TestModeToFileVisibilityConverter"/>
+            <local:EnumEqualityConverter x:Key="TestModeRawConverter" Target="{x:Static testing:TestMode.Raw}"/>
+            <local:EnumEqualityConverter x:Key="CleanupDeleteAfterTestConverter" Target="{x:Static testing:TestCleanupPolicy.DeleteAfterTest}"/>
+            <local:EnumEqualityConverter x:Key="CleanupDeleteOnAppCloseConverter" Target="{x:Static testing:TestCleanupPolicy.DeleteOnAppClose}"/>
+            <local:EnumEqualityConverter x:Key="CleanupKeepUntilManualConverter" Target="{x:Static testing:TestCleanupPolicy.KeepUntilManual}"/>
+
+            <!--
+                DataGrid isn't part of WPF-UI's styled control set, so without this it falls back
+                to the classic Windows look (black text, light cell background) regardless of the
+                app's dark theme — this is what was unreadable. Styled implicitly (no x:Key) so
+                every DataGrid in the app picks it up automatically.
+            -->
+            <Style TargetType="DataGrid">
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}"/>
+                <Setter Property="BorderThickness" Value="0"/>
+                <Setter Property="RowBackground" Value="Transparent"/>
+                <Setter Property="AlternatingRowBackground" Value="{DynamicResource ControlFillColorDefaultBrush}"/>
+                <Setter Property="HorizontalGridLinesBrush" Value="{DynamicResource ControlStrokeColorDefaultBrush}"/>
+                <Setter Property="VerticalGridLinesBrush" Value="{DynamicResource ControlStrokeColorDefaultBrush}"/>
+                <Setter Property="ColumnHeaderHeight" Value="36"/>
+            </Style>
+
+            <Style TargetType="DataGridColumnHeader">
+                <Setter Property="Background" Value="{DynamicResource ControlFillColorSecondaryBrush}"/>
+                <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}"/>
+                <Setter Property="FontWeight" Value="SemiBold"/>
+                <Setter Property="Padding" Value="10,6"/>
+                <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource ControlStrokeColorDefaultBrush}"/>
+            </Style>
+
+            <Style TargetType="DataGridCell">
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}"/>
+                <Setter Property="BorderThickness" Value="0"/>
+                <Setter Property="Padding" Value="10,6"/>
+                <Style.Triggers>
+                    <Trigger Property="IsSelected" Value="True">
+                        <Setter Property="Background" Value="{DynamicResource AccentFillColorDefaultBrush}"/>
+                        <Setter Property="Foreground" Value="{DynamicResource TextOnAccentFillColorPrimaryBrush}"/>
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+
+            <Style TargetType="DataGridRow">
+                <Setter Property="Background" Value="Transparent"/>
+            </Style>
+        </ResourceDictionary>
     </Application.Resources>
 </Application>

@@ -23,6 +23,9 @@ public static class DriveEnumerator
             var serial = ((string?)disk["SerialNumber"] ?? "UNKNOWN").Trim();
             var model = ((string?)disk["Model"] ?? "Unknown Drive").Trim();
 
+            var volumeLetters = GetAllVolumeLetters(index);
+            var (fileSystemType, totalBytes, freeBytes) = GetVolumeSpaceInfo(volumeLetters.FirstOrDefault());
+
             drives.Add(new DriveInfo
             {
                 PhysicalDriveIndex = index,
@@ -31,31 +34,70 @@ public static class DriveEnumerator
                 ReportedCapacityBytes = capacity,
                 InterfaceType = "USB",
                 IsRemovable = true,
-                VolumeLetter = GetFirstVolumeLetter(index),
+                VolumeLetter = volumeLetters.FirstOrDefault(),
+                VolumeLetters = volumeLetters,
+                FileSystemType = fileSystemType,
+                TotalVolumeBytes = totalBytes,
+                AvailableFreeBytes = freeBytes,
             });
         }
 
         return drives;
     }
 
-    private static string? GetFirstVolumeLetter(int physicalDriveIndex)
+    /// <summary>
+    /// All volume letters on this physical disk — not just the first. Some drives ship with more
+    /// than one partition (e.g. a small bundled-software partition alongside the main data
+    /// partition); if only the first is locked before a raw write, the second stays mounted and
+    /// Windows' storage stack refuses raw writes to the disk, surfacing as ERROR_NOT_READY.
+    /// </summary>
+    private static IReadOnlyList<string> GetAllVolumeLetters(int physicalDriveIndex)
     {
-        using var partitionSearcher = new ManagementObjectSearcher(
-            $"ASSOCIATORS OF {{Win32_DiskDrive.DeviceID='\\\\\\\\.\\\\PHYSICALDRIVE{physicalDriveIndex}'}} " +
-            "WHERE AssocClass = Win32_DiskDriveToDiskPartition");
+        var letters = new List<string>();
 
-        foreach (ManagementObject partition in partitionSearcher.Get())
+        // A drive with no partition (unformatted, RAW, or fresh from the factory) legitimately
+        // has no associated volumes — that's a normal outcome here, not an error condition.
+        try
         {
-            using var logicalDiskSearcher = new ManagementObjectSearcher(
-                $"ASSOCIATORS OF {{Win32_DiskPartition.DeviceID='{partition["DeviceID"]}'}} " +
-                "WHERE AssocClass = Win32_LogicalDiskToPartition");
+            using var partitionSearcher = new ManagementObjectSearcher(
+                $"ASSOCIATORS OF {{Win32_DiskDrive.DeviceID='\\\\.\\PHYSICALDRIVE{physicalDriveIndex}'}} " +
+                "WHERE AssocClass = Win32_DiskDriveToDiskPartition");
 
-            foreach (ManagementObject logicalDisk in logicalDiskSearcher.Get())
+            foreach (ManagementObject partition in partitionSearcher.Get())
             {
-                return (string?)logicalDisk["DeviceID"];
+                using var logicalDiskSearcher = new ManagementObjectSearcher(
+                    $"ASSOCIATORS OF {{Win32_DiskPartition.DeviceID='{partition["DeviceID"]}'}} " +
+                    "WHERE AssocClass = Win32_LogicalDiskToPartition");
+
+                foreach (ManagementObject logicalDisk in logicalDiskSearcher.Get())
+                {
+                    if ((string?)logicalDisk["DeviceID"] is { } letter)
+                        letters.Add(letter);
+                }
             }
         }
+        catch (ManagementException)
+        {
+            return letters;
+        }
 
-        return null;
+        return letters;
+    }
+
+    private static (string? FileSystemType, ulong TotalBytes, ulong FreeBytes) GetVolumeSpaceInfo(string? volumeLetter)
+    {
+        if (volumeLetter is null) return (null, 0, 0);
+
+        try
+        {
+            var info = new System.IO.DriveInfo(volumeLetter);
+            if (!info.IsReady) return (null, 0, 0);
+
+            return (info.DriveFormat, (ulong)info.TotalSize, (ulong)info.AvailableFreeSpace);
+        }
+        catch (Exception ex) when (ex is IOException or ArgumentException or UnauthorizedAccessException)
+        {
+            return (null, 0, 0);
+        }
     }
 }

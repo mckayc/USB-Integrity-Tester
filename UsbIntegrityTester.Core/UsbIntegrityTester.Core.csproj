@@ -13,4 +13,8 @@
     <PackageReference Include="System.Management" Version="10.0.11" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="UsbIntegrityTester.Tests" />
+  </ItemGroup>
+
 </Project>

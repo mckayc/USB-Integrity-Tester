@@ -19,13 +19,13 @@ public sealed class SpeedTester
 
     public async Task<SpeedTestResult> MeasureWriteSpeedAsync(
         RawDiskAccessor accessor, ulong startOffset, ulong regionSizeBytes, int blockSize,
-        TimeSpan duration, IProgress<TestProgress>? progress, CancellationToken cancellationToken)
+        TimeSpan duration, TestPhase phase, IProgress<TestProgress>? progress, CancellationToken cancellationToken)
     {
         var buffer = new byte[blockSize];
         CapacityVerifier.FillDeterministicBlock(buffer, seed: 0xA5A5A5A5UL, blockOffset: 0);
 
         return await RunAsync(
-            TestPhase.MeasuringWriteSpeed, blockSize, duration, progress, cancellationToken,
+            phase, blockSize, duration, progress, cancellationToken,
             (offset) =>
             {
                 accessor.WriteBlock(offset, buffer, blockSize);
@@ -35,12 +35,12 @@ public sealed class SpeedTester
 
     public async Task<SpeedTestResult> MeasureReadSpeedAsync(
         RawDiskAccessor accessor, ulong startOffset, ulong regionSizeBytes, int blockSize,
-        TimeSpan duration, IProgress<TestProgress>? progress, CancellationToken cancellationToken)
+        TimeSpan duration, TestPhase phase, IProgress<TestProgress>? progress, CancellationToken cancellationToken)
     {
         var buffer = new byte[blockSize];
 
         return await RunAsync(
-            TestPhase.MeasuringReadSpeed, blockSize, duration, progress, cancellationToken,
+            phase, blockSize, duration, progress, cancellationToken,
             (offset) =>
             {
                 accessor.ReadBlock(offset, buffer, blockSize);
