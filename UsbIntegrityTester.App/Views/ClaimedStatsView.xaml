@@ -8,9 +8,18 @@
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel Margin="24" MaxWidth="520" HorizontalAlignment="Left">
 
-            <TextBlock Text="Claimed Stats" FontSize="24" FontWeight="SemiBold" Margin="0,0,0,4"/>
-            <TextBlock Text="Tell the tester what this drive is supposed to be, then verify it against reality."
-                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,20" TextWrapping="Wrap"/>
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
+                <Border Background="{DynamicResource ControlFillColorDefaultBrush}" CornerRadius="8"
+                        Width="40" Height="40" Margin="0,0,12,0">
+                    <ui:SymbolIcon Symbol="ClipboardTaskListLtr24" FontSize="20"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="Claimed Stats" FontSize="22" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                    <TextBlock Text="Tell the tester what this drive is supposed to be, then verify it against reality."
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="12" TextWrapping="Wrap"/>
+                </StackPanel>
+            </StackPanel>
 
             <ui:CardExpander Header="Drive" IsExpanded="True" Margin="0,0,0,16">
                 <ui:CardExpander.Icon>
@@ -27,17 +36,17 @@
                         </ui:Button.Icon>
                     </ui:Button>
 
-                    <TextBlock Text="{Binding SelectedDrive.SerialNumber, StringFormat='Serial: {0}'}" Margin="0,0,0,2"/>
-                    <TextBlock Text="{Binding SelectedDrive.ReportedCapacityBytes, StringFormat='OS-reported size: {0} bytes'}" Margin="0,0,0,2"/>
-                    <TextBlock Text="{Binding SelectedDrive.FileSystemType, StringFormat='Formatted as: {0}', FallbackValue='Formatted as: (no mounted volume)', TargetNullValue='Formatted as: (no mounted volume)'}"/>
+                    <TextBlock Text="{Binding SelectedDrive.SerialNumber, StringFormat='Serial: {0}'}" Margin="0,0,0,2" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                    <TextBlock Text="{Binding SelectedDrive.ReportedCapacityBytes, StringFormat='OS-reported size: {0} bytes'}" Margin="0,0,0,2" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                    <TextBlock Text="{Binding SelectedDrive.FileSystemType, StringFormat='Formatted as: {0}', FallbackValue='Formatted as: (no mounted volume)', TargetNullValue='Formatted as: (no mounted volume)'}" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                 </StackPanel>
             </ui:CardExpander>
 
-            <TextBlock Text="Drive Label / ID (for tracking)" FontWeight="SemiBold" Margin="0,0,0,6"/>
+            <TextBlock Text="Drive Label / ID (for tracking)" FontWeight="SemiBold" Margin="0,0,0,6" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
             <ui:TextBox Text="{Binding DriveLabel, UpdateSourceTrigger=PropertyChanged}"
                         PlaceholderText="e.g. Kingston-64GB-lot-A" Margin="0,0,0,16"/>
 
-            <TextBlock Text="Claimed Capacity (GB)" FontWeight="SemiBold" Margin="0,0,0,6"/>
+            <TextBlock Text="Claimed Capacity (GB)" FontWeight="SemiBold" Margin="0,0,0,6" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
             <Grid Margin="0,0,0,4">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
@@ -53,14 +62,14 @@
             <TextBlock Text="Loaded automatically from what Windows reports when you pick a drive, but edit it freely — this is not proof of anything, since a counterfeit drive fakes the OS-reported size too. The whole point of the Testing tab is to check whether this number is actually true."
                        Foreground="{DynamicResource TextFillColorTertiaryBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,20"/>
 
-            <TextBlock Text="Claimed Speed" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,4"/>
+            <TextBlock Text="Claimed Speed" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,4" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
             <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,12"
                        Text="Manufacturers usually advertise read speed prominently on the box (e.g. &quot;up to 130 MB/s&quot;) since it's the more flattering number. Write speed is often lower, rarely advertised, and is usually where cheap or counterfeit controllers fail hardest once any cache runs out. Fill in whatever the packaging or online listing claims for each — leave a field at its default if the listing doesn't specify one."/>
 
-            <TextBlock Text="Claimed Read Speed (MB/s)" FontWeight="SemiBold" Margin="0,0,0,6"/>
+            <TextBlock Text="Claimed Read Speed (MB/s)" FontWeight="SemiBold" Margin="0,0,0,6" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
             <ui:TextBox Text="{Binding ClaimedReadSpeedMegabytesPerSecond, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,16"/>
 
-            <TextBlock Text="Claimed Write Speed (MB/s)" FontWeight="SemiBold" Margin="0,0,0,6"/>
+            <TextBlock Text="Claimed Write Speed (MB/s)" FontWeight="SemiBold" Margin="0,0,0,6" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
             <ui:TextBox Text="{Binding ClaimedWriteSpeedMegabytesPerSecond, UpdateSourceTrigger=PropertyChanged}"/>
 
         </StackPanel>

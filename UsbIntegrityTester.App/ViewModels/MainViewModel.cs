@@ -37,18 +37,18 @@ public partial class MainViewModel : ObservableObject
 
     public TestTrackViewModel CapacityTrack { get; } =
         new("Capacity Test", "Write", "Verify", ThroughputPalette.CapacityNeutral, ThroughputPalette.CapacityNeutralFill, usesCapacityLayout: true);
-    public TestTrackViewModel LargeFileTrack { get; } =
-        new("Large File (1 MB blocks)", "Write", "Read", ThroughputPalette.LargeFileNeutral, ThroughputPalette.LargeFileNeutralFill);
-    public TestTrackViewModel SmallFileTrack { get; } =
-        new("Small File (4 KB blocks)", "Write", "Read", ThroughputPalette.SmallFileNeutral, ThroughputPalette.SmallFileNeutralFill);
-    public TestTrackViewModel HugeFileTrack { get; } =
-        new("Huge File (100 MB blocks)", "Write", "Read", ThroughputPalette.HugeFileNeutral, ThroughputPalette.HugeFileNeutralFill);
+    public TestTrackViewModel Slot1Track { get; } =
+        new(SpeedTestCategoryOption.All[0].DisplayName, "Write", "Read", ThroughputPalette.Slot1Neutral, ThroughputPalette.Slot1NeutralFill);
+    public TestTrackViewModel Slot2Track { get; } =
+        new(SpeedTestCategoryOption.All[0].DisplayName, "Write", "Read", ThroughputPalette.Slot2Neutral, ThroughputPalette.Slot2NeutralFill);
+    public TestTrackViewModel Slot3Track { get; } =
+        new(SpeedTestCategoryOption.All[0].DisplayName, "Write", "Read", ThroughputPalette.Slot3Neutral, ThroughputPalette.Slot3NeutralFill);
 
-    /// <summary>All four tracks in a fixed order — Capacity, Large, Small, Huge — always. Cards
-    /// used to reorder to put whichever test was running at the top, but that meant the whole
+    /// <summary>All four tracks in a fixed order — Capacity, then the 3 speed test slots — always.
+    /// Cards used to reorder to put whichever test was running at the top, but that meant the whole
     /// layout reshuffled every time a test finished, which was disorienting; the accent border and
     /// pulsing dot on the active card already say "this one's running" without moving anything.</summary>
-    public IReadOnlyList<TestTrackViewModel> AllTracks => new[] { CapacityTrack, LargeFileTrack, SmallFileTrack, HugeFileTrack };
+    public IReadOnlyList<TestTrackViewModel> AllTracks => new[] { CapacityTrack, Slot1Track, Slot2Track, Slot3Track };
 
     public MainViewModel()
     {
@@ -136,10 +136,13 @@ public partial class MainViewModel : ObservableObject
     private string? _lastFileModeVolumeLetter;
 
     [RelayCommand]
-    private void CleanUpTestFilesNow()
+    private async Task CleanUpTestFilesNowAsync()
     {
         if (SelectedDrive?.VolumeLetter is not { } letter) return;
-        FileModeEngine.TryDeleteTestFolder(letter);
+        // Off the UI thread — a prior test can leave many thousands of files behind (a Full
+        // capacity scan especially), and deleting them synchronously here would freeze the window
+        // for however long that takes with no way to tell it's still working.
+        await Task.Run(() => FileModeEngine.TryDeleteTestFolder(letter));
         AppLog.Info($"Cleaned up test files on {letter}.");
     }
 
@@ -153,24 +156,49 @@ public partial class MainViewModel : ObservableObject
 
     [ObservableProperty] private bool _runCapacityTest = true;
     [ObservableProperty] private bool _runSpeedTest = true;
-    [ObservableProperty] private bool _runLargeFileSpeedTest = true;
-    [ObservableProperty] private bool _runSmallFileSpeedTest = true;
-    [ObservableProperty] private bool _runHugeFileSpeedTest;
     [ObservableProperty] private CapacityScanDepth _capacityScanDepth = CapacityScanDepth.Quick;
 
-    // Keep each Run Test card's "selected/not selected" state live as the user toggles the Setup
-    // tab, so a card doesn't misleadingly say "Not selected" for a test that's actually checked.
+    /// <summary>Every category a speed test slot's dropdown can pick, for binding via SelectedValue/SelectedValuePath.</summary>
+    public IReadOnlyList<SpeedTestCategoryOption> SpeedTestCategoryOptions => SpeedTestCategoryOption.All;
+
+    [ObservableProperty] private bool _speedTestSlot1Enabled = true;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SpeedTestSlot1Info))]
+    private SpeedTestCategory _speedTestSlot1Category = SpeedTestCategory.StandardBenchmark;
+    [ObservableProperty] private bool _speedTestSlot2Enabled = true;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SpeedTestSlot2Info))]
+    private SpeedTestCategory _speedTestSlot2Category = SpeedTestCategory.SmallFiles;
+    [ObservableProperty] private bool _speedTestSlot3Enabled = true;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SpeedTestSlot3Info))]
+    private SpeedTestCategory _speedTestSlot3Category = SpeedTestCategory.MediumFiles;
+
+    /// <summary>The selected category's full description/size-range, for the Setup tab's helper text under each dropdown.</summary>
+    public SpeedTestCategoryOption SpeedTestSlot1Info => SpeedTestCategoryOption.All.First(o => o.Category == SpeedTestSlot1Category);
+    public SpeedTestCategoryOption SpeedTestSlot2Info => SpeedTestCategoryOption.All.First(o => o.Category == SpeedTestSlot2Category);
+    public SpeedTestCategoryOption SpeedTestSlot3Info => SpeedTestCategoryOption.All.First(o => o.Category == SpeedTestSlot3Category);
+
+    // Keep each Run Test card's "selected/not selected" state and title live as the user edits the
+    // Setup tab, so a card doesn't misleadingly say "Not selected" for a test that's actually
+    // checked, or keep showing a category the user just swapped away from.
     partial void OnRunCapacityTestChanged(bool value) => CapacityTrack.IsSelected = value;
     partial void OnRunSpeedTestChanged(bool value) => SyncSpeedTrackSelection();
-    partial void OnRunLargeFileSpeedTestChanged(bool value) => SyncSpeedTrackSelection();
-    partial void OnRunSmallFileSpeedTestChanged(bool value) => SyncSpeedTrackSelection();
-    partial void OnRunHugeFileSpeedTestChanged(bool value) => SyncSpeedTrackSelection();
+    partial void OnSpeedTestSlot1EnabledChanged(bool value) => SyncSpeedTrackSelection();
+    partial void OnSpeedTestSlot2EnabledChanged(bool value) => SyncSpeedTrackSelection();
+    partial void OnSpeedTestSlot3EnabledChanged(bool value) => SyncSpeedTrackSelection();
+    partial void OnSpeedTestSlot1CategoryChanged(SpeedTestCategory value) => SyncSpeedTrackSelection();
+    partial void OnSpeedTestSlot2CategoryChanged(SpeedTestCategory value) => SyncSpeedTrackSelection();
+    partial void OnSpeedTestSlot3CategoryChanged(SpeedTestCategory value) => SyncSpeedTrackSelection();
 
     private void SyncSpeedTrackSelection()
     {
-        LargeFileTrack.IsSelected = RunSpeedTest && RunLargeFileSpeedTest;
-        SmallFileTrack.IsSelected = RunSpeedTest && RunSmallFileSpeedTest;
-        HugeFileTrack.IsSelected = RunSpeedTest && RunHugeFileSpeedTest;
+        Slot1Track.IsSelected = RunSpeedTest && SpeedTestSlot1Enabled;
+        Slot1Track.Title = SpeedTestCategoryOption.All.First(o => o.Category == SpeedTestSlot1Category).DisplayName;
+        Slot2Track.IsSelected = RunSpeedTest && SpeedTestSlot2Enabled;
+        Slot2Track.Title = SpeedTestCategoryOption.All.First(o => o.Category == SpeedTestSlot2Category).DisplayName;
+        Slot3Track.IsSelected = RunSpeedTest && SpeedTestSlot3Enabled;
+        Slot3Track.Title = SpeedTestCategoryOption.All.First(o => o.Category == SpeedTestSlot3Category).DisplayName;
     }
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ProgressPercent))]
@@ -225,8 +253,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _verdictText = string.Empty;
     [ObservableProperty] private string _verdictExplanationText = string.Empty;
     [ObservableProperty] private ReportCapacitySummary _capacitySummary = ReportCapacitySummary.Empty;
-    [ObservableProperty] private ObservableCollection<SpeedComparisonRow> _speedComparisonRows = new();
-    [ObservableProperty] private ObservableCollection<ReportTrendCard> _trendCards = new();
+    [ObservableProperty] private ObservableCollection<SpeedTestSlotReportRow> _speedTestRows = new();
     [ObservableProperty] private ObservableCollection<ReportStat> _extraStats = new();
 
     public ObservableCollection<LogEntry> Logs => AppLog.Entries;
@@ -387,9 +414,9 @@ public partial class MainViewModel : ObservableObject
     private TestTrackViewModel? TrackForPhase(TestPhase phase) => phase switch
     {
         TestPhase.WritingCapacityPattern or TestPhase.VerifyingCapacityPattern => CapacityTrack,
-        TestPhase.MeasuringLargeFileWriteSpeed or TestPhase.MeasuringLargeFileReadSpeed => LargeFileTrack,
-        TestPhase.MeasuringSmallFileWriteSpeed or TestPhase.MeasuringSmallFileReadSpeed => SmallFileTrack,
-        TestPhase.MeasuringHugeFileWriteSpeed or TestPhase.MeasuringHugeFileReadSpeed => HugeFileTrack,
+        TestPhase.MeasuringSpeedTestSlot1WriteSpeed or TestPhase.MeasuringSpeedTestSlot1ReadSpeed => Slot1Track,
+        TestPhase.MeasuringSpeedTestSlot2WriteSpeed or TestPhase.MeasuringSpeedTestSlot2ReadSpeed => Slot2Track,
+        TestPhase.MeasuringSpeedTestSlot3WriteSpeed or TestPhase.MeasuringSpeedTestSlot3ReadSpeed => Slot3Track,
         _ => null,
     };
 
@@ -397,14 +424,14 @@ public partial class MainViewModel : ObservableObject
     {
         TestPhase.WritingCapacityPattern => "Writing test pattern…",
         TestPhase.VerifyingCapacityPattern => "Verifying blocks…",
-        TestPhase.MeasuringLargeFileWriteSpeed or TestPhase.MeasuringSmallFileWriteSpeed or TestPhase.MeasuringHugeFileWriteSpeed => "Writing…",
-        TestPhase.MeasuringLargeFileReadSpeed or TestPhase.MeasuringSmallFileReadSpeed or TestPhase.MeasuringHugeFileReadSpeed => "Reading…",
+        TestPhase.MeasuringSpeedTestSlot1WriteSpeed or TestPhase.MeasuringSpeedTestSlot2WriteSpeed or TestPhase.MeasuringSpeedTestSlot3WriteSpeed => "Writing…",
+        TestPhase.MeasuringSpeedTestSlot1ReadSpeed or TestPhase.MeasuringSpeedTestSlot2ReadSpeed or TestPhase.MeasuringSpeedTestSlot3ReadSpeed => "Reading…",
         _ => string.Empty,
     };
 
     /// <summary>Every tracked phase is either the "Write" half (WritingCapacityPattern or a *Write* speed phase) or the "Read"/"Verify" half.</summary>
     private static bool IsPrimaryChannelPhase(TestPhase phase) => phase is TestPhase.WritingCapacityPattern
-        or TestPhase.MeasuringLargeFileWriteSpeed or TestPhase.MeasuringSmallFileWriteSpeed or TestPhase.MeasuringHugeFileWriteSpeed;
+        or TestPhase.MeasuringSpeedTestSlot1WriteSpeed or TestPhase.MeasuringSpeedTestSlot2WriteSpeed or TestPhase.MeasuringSpeedTestSlot3WriteSpeed;
 
     private void FlushLiveProgress()
     {
@@ -558,16 +585,14 @@ public partial class MainViewModel : ObservableObject
         return $"~{Math.Max(1, span.Seconds)}s remaining";
     }
 
-    private static string PhaseLabel(TestPhase phase) => phase switch
+    private string PhaseLabel(TestPhase phase) => phase switch
     {
         TestPhase.WritingCapacityPattern => "Writing unique data to every tested block, to prove each address is real storage",
         TestPhase.VerifyingCapacityPattern => "Reading each block back to confirm it holds its own data, not a copy",
-        TestPhase.MeasuringLargeFileWriteSpeed => "Writing large 1 MB blocks — simulates copying one big file",
-        TestPhase.MeasuringLargeFileReadSpeed => "Reading large 1 MB blocks — simulates copying one big file",
-        TestPhase.MeasuringSmallFileWriteSpeed => "Writing small 4 KB blocks — simulates copying many small files",
-        TestPhase.MeasuringSmallFileReadSpeed => "Reading small 4 KB blocks — simulates copying many small files",
-        TestPhase.MeasuringHugeFileWriteSpeed => "Writing huge 100 MB blocks — simulates copying one very large file",
-        TestPhase.MeasuringHugeFileReadSpeed => "Reading huge 100 MB blocks — simulates copying one very large file",
+        TestPhase.MeasuringSpeedTestSlot1WriteSpeed or TestPhase.MeasuringSpeedTestSlot2WriteSpeed or TestPhase.MeasuringSpeedTestSlot3WriteSpeed
+            => $"Writing randomly-sized {TrackForPhase(phase)?.Title ?? "files"} — simulates copying files like this to the drive",
+        TestPhase.MeasuringSpeedTestSlot1ReadSpeed or TestPhase.MeasuringSpeedTestSlot2ReadSpeed or TestPhase.MeasuringSpeedTestSlot3ReadSpeed
+            => $"Reading randomly-sized {TrackForPhase(phase)?.Title ?? "files"} — simulates copying files like this from the drive",
         TestPhase.Complete => "Complete",
         _ => phase.ToString(),
     };
@@ -622,16 +647,14 @@ public partial class MainViewModel : ObservableObject
             CleanupPolicy = CleanupPolicy,
             RunCapacityTest = RunCapacityTest,
             RunSpeedTest = RunSpeedTest,
-            RunLargeFileSpeedTest = RunLargeFileSpeedTest,
-            RunSmallFileSpeedTest = RunSmallFileSpeedTest,
-            RunHugeFileSpeedTest = RunHugeFileSpeedTest,
+            SpeedTestSlot1 = new SpeedTestSlotSettings(SpeedTestSlot1Enabled, SpeedTestSlot1Category),
+            SpeedTestSlot2 = new SpeedTestSlotSettings(SpeedTestSlot2Enabled, SpeedTestSlot2Category),
+            SpeedTestSlot3 = new SpeedTestSlotSettings(SpeedTestSlot3Enabled, SpeedTestSlot3Category),
             CapacityScanDepth = CapacityScanDepth,
         };
 
         CapacityTrack.IsSelected = RunCapacityTest;
-        LargeFileTrack.IsSelected = RunSpeedTest && RunLargeFileSpeedTest;
-        SmallFileTrack.IsSelected = RunSpeedTest && RunSmallFileSpeedTest;
-        HugeFileTrack.IsSelected = RunSpeedTest && RunHugeFileSpeedTest;
+        SyncSpeedTrackSelection();
         foreach (var track in AllTracks) track.ResetForRun();
 
         CurrentPhaseLabel = "Starting…";
@@ -717,6 +740,7 @@ public partial class MainViewModel : ObservableObject
             TestResult = result,
             Verdict = verdict,
             TestDurationSeconds = _overallTestStopwatch?.Elapsed.TotalSeconds ?? 0,
+            CapacityScanDepth = CapacityScanDepth,
         };
 
         LastReport = report;
@@ -736,11 +760,13 @@ public partial class MainViewModel : ObservableObject
         _ => verdict.ToString(),
     };
 
+    /// <summary>How much data the "practical time to move this" figures assume someone is copying — a fixed reference amount so every category's time is directly comparable.</summary>
+    private const double PracticalTransferGb = 5;
+
     private void BuildReportVisuals(ReportModel report)
     {
         BuildCapacitySummary(report);
-        BuildSpeedComparisonRows(report);
-        BuildTrendCards(report);
+        BuildSpeedTestRows(report);
         BuildExtraStats(report);
     }
 
@@ -762,77 +788,63 @@ public partial class MainViewModel : ObservableObject
                 BlocksTested = capacity.BlocksTested,
                 BlocksFailed = capacity.BlocksFailed,
                 HasData = true,
+                ScanThoroughnessText = report.CapacityScanDepth switch
+                {
+                    CapacityScanDepth.Quick => $"Quick scan — {capacity.BlocksTested:N0} sampled blocks checked. Fast, but a smaller sample means it's less likely to catch fraud confined to a narrow region of the drive; run a Standard or Full scan for more confidence.",
+                    CapacityScanDepth.Standard => $"Standard scan — {capacity.BlocksTested:N0} blocks checked (~5% of the claimed capacity, evenly spread). A reasonable middle ground between speed and thoroughness.",
+                    CapacityScanDepth.Full => $"Full scan — every one of the {capacity.BlocksTested:N0} blocks across the claimed capacity was checked. The most thorough result this app can produce.",
+                    _ => string.Empty,
+                },
             };
     }
 
-    private void BuildSpeedComparisonRows(ReportModel report)
+    private void BuildSpeedTestRows(ReportModel report)
     {
-        var entries = new List<(string Label, double Measured, double? Claimed, double? Peak)>();
+        var rows = new List<SpeedTestSlotReportRow>();
 
-        if (report.TestResult.Write is { } write)
-            entries.Add(("Large File Write", write.AverageMegabytesPerSecond, report.ClaimedWriteSpeedMegabytesPerSecond, write.PeakBurstMegabytesPerSecond));
-        if (report.TestResult.Read is { } read)
-            entries.Add(("Large File Read", read.AverageMegabytesPerSecond, report.ClaimedReadSpeedMegabytesPerSecond, read.PeakBurstMegabytesPerSecond));
-        if (report.TestResult.SmallFileWrite is { } smallWrite)
-            entries.Add(("Small File Write", smallWrite.AverageMegabytesPerSecond, report.ClaimedWriteSpeedMegabytesPerSecond, smallWrite.PeakBurstMegabytesPerSecond));
-        if (report.TestResult.SmallFileRead is { } smallRead)
-            entries.Add(("Small File Read", smallRead.AverageMegabytesPerSecond, report.ClaimedReadSpeedMegabytesPerSecond, smallRead.PeakBurstMegabytesPerSecond));
-        if (report.TestResult.HugeFileWrite is { } hugeWrite)
-            entries.Add(("Huge File Write", hugeWrite.AverageMegabytesPerSecond, report.ClaimedWriteSpeedMegabytesPerSecond, hugeWrite.PeakBurstMegabytesPerSecond));
-        if (report.TestResult.HugeFileRead is { } hugeRead)
-            entries.Add(("Huge File Read", hugeRead.AverageMegabytesPerSecond, report.ClaimedReadSpeedMegabytesPerSecond, hugeRead.PeakBurstMegabytesPerSecond));
-        // The capacity test writes/reads back every scanned block, so it doubles as an independent
-        // measurement — often over a much larger swath of the drive than the dedicated speed test.
-        if (report.TestResult.Capacity is { WriteMegabytesPerSecond: > 0 } capacityForWrite)
-            entries.Add(("Capacity Scan Write", capacityForWrite.WriteMegabytesPerSecond, report.ClaimedWriteSpeedMegabytesPerSecond, null));
-        if (report.TestResult.Capacity is { ReadMegabytesPerSecond: > 0 } capacityForRead)
-            entries.Add(("Capacity Scan Read", capacityForRead.ReadMegabytesPerSecond, report.ClaimedReadSpeedMegabytesPerSecond, null));
-
-        // All bars share one scale (the largest measurement or claim in the whole set) so their
-        // relative lengths are directly comparable at a glance.
-        var axisMax = entries.Count == 0 ? 1 : Math.Max(
-            entries.Max(e => e.Measured),
-            entries.Max(e => e.Claimed ?? 0));
-        if (axisMax <= 0) axisMax = 1;
-
-        SpeedComparisonRows = new ObservableCollection<SpeedComparisonRow>(entries.Select(e => new SpeedComparisonRow
+        void AddRow(SpeedTestSlotResult? slot)
         {
-            Label = e.Label,
-            MeasuredMbps = e.Measured,
-            ClaimedMbps = e.Claimed,
-            PeakMbps = e.Peak,
-            BarFraction = Math.Clamp(e.Measured / axisMax, 0, 1),
-        }));
-    }
+            if (slot is null) return;
+            var info = SpeedTestCategoryCatalog.Get(slot.Category);
+            var sizeRange = SpeedTestCategoryOption.All.First(o => o.Category == slot.Category).SizeRangeText;
 
-    private void BuildTrendCards(ReportModel report)
-    {
-        var cards = new List<ReportTrendCard>();
+            var writeSeconds = slot.Write.AverageMegabytesPerSecond > 0 ? PracticalTransferGb * 1000 / slot.Write.AverageMegabytesPerSecond : 0;
+            var readSeconds = slot.Read.AverageMegabytesPerSecond > 0 ? PracticalTransferGb * 1000 / slot.Read.AverageMegabytesPerSecond : 0;
 
-        void AddCard(string title, SpeedTestResult? result, Brush stroke, Brush fill)
-        {
-            if (result?.SampledMegabytesPerSecond is not { Count: > 0 } samples) return;
-            cards.Add(new ReportTrendCard
+            var practicalText = writeSeconds > 0 && readSeconds > 0
+                ? $"Moving {PracticalTransferGb:N0} GB worth of {info.WorkloadDescription.ToLowerInvariant()} ({sizeRange} each) would take about "
+                    + $"{FormatPracticalDuration(writeSeconds)} to copy TO this drive, and about {FormatPracticalDuration(readSeconds)} to copy FROM it back to a computer."
+                : "Not enough data to estimate a practical transfer time for this category.";
+
+            rows.Add(new SpeedTestSlotReportRow
             {
-                Title = title,
-                Points = samples,
-                AverageMbps = result.AverageMegabytesPerSecond,
-                PeakMbps = result.PeakBurstMegabytesPerSecond,
-                Stroke = stroke,
-                Fill = fill,
+                CategoryName = info.DisplayName,
+                WorkloadDescription = info.WorkloadDescription,
+                SizeRangeText = sizeRange,
+                WriteAvgMbps = slot.Write.AverageMegabytesPerSecond,
+                WritePeakMbps = slot.Write.PeakBurstMegabytesPerSecond,
+                ClaimedWriteMbps = report.ClaimedWriteSpeedMegabytesPerSecond,
+                ReadAvgMbps = slot.Read.AverageMegabytesPerSecond,
+                ReadPeakMbps = slot.Read.PeakBurstMegabytesPerSecond,
+                ClaimedReadMbps = report.ClaimedReadSpeedMegabytesPerSecond,
+                PracticalTimeText = practicalText,
             });
         }
 
-        // Each card shows one workload's burst-to-sustained curve — reveals an SLC-cache cliff
-        // (fast at first, then drops) without crowding every workload onto one shared chart.
-        AddCard("Large File Write", report.TestResult.Write, ThroughputPalette.LargeFileNeutral, ThroughputPalette.LargeFileNeutralFill);
-        AddCard("Large File Read", report.TestResult.Read, ThroughputPalette.LargeFileNeutral, ThroughputPalette.LargeFileNeutralFill);
-        AddCard("Small File Write", report.TestResult.SmallFileWrite, ThroughputPalette.SmallFileNeutral, ThroughputPalette.SmallFileNeutralFill);
-        AddCard("Small File Read", report.TestResult.SmallFileRead, ThroughputPalette.SmallFileNeutral, ThroughputPalette.SmallFileNeutralFill);
-        AddCard("Huge File Write", report.TestResult.HugeFileWrite, ThroughputPalette.HugeFileNeutral, ThroughputPalette.HugeFileNeutralFill);
-        AddCard("Huge File Read", report.TestResult.HugeFileRead, ThroughputPalette.HugeFileNeutral, ThroughputPalette.HugeFileNeutralFill);
+        AddRow(report.TestResult.Slot1);
+        AddRow(report.TestResult.Slot2);
+        AddRow(report.TestResult.Slot3);
 
-        TrendCards = new ObservableCollection<ReportTrendCard>(cards);
+        SpeedTestRows = new ObservableCollection<SpeedTestSlotReportRow>(rows);
+    }
+
+    private static string FormatPracticalDuration(double seconds)
+    {
+        if (seconds <= 0 || double.IsNaN(seconds) || double.IsInfinity(seconds)) return "an unknown amount of time";
+        var span = TimeSpan.FromSeconds(seconds);
+        if (span.TotalHours >= 1) return $"{span.TotalHours:N1} hours";
+        if (span.TotalMinutes >= 1) return $"{span.TotalMinutes:N1} minutes";
+        return $"{Math.Max(1, span.Seconds)} seconds";
     }
 
     private void BuildExtraStats(ReportModel report)
@@ -847,21 +859,15 @@ public partial class MainViewModel : ObservableObject
         if (report.NegotiatedLinkSpeed is { } linkSpeed)
         {
             var ceiling = linkSpeed.MaxTheoreticalMegabytesPerSecond();
-            var bestMeasured = new[]
-            {
-                report.TestResult.Read?.AverageMegabytesPerSecond,
-                report.TestResult.Write?.AverageMegabytesPerSecond,
-            }.Where(v => v.HasValue).Select(v => v!.Value).DefaultIfEmpty(0).Max();
+            var bestMeasured = new[] { report.TestResult.Slot1, report.TestResult.Slot2, report.TestResult.Slot3 }
+                .Where(s => s is not null)
+                .SelectMany(s => new[] { s!.Read.AverageMegabytesPerSecond, s.Write.AverageMegabytesPerSecond })
+                .DefaultIfEmpty(0).Max();
 
             stats.Add(new ReportStat("Negotiated Link", $"{linkSpeed.DisplayName()} ({ceiling:N0} MB/s ceiling)"));
             if (bestMeasured > 0 && ceiling > 0)
                 stats.Add(new ReportStat("Link Utilization", $"{bestMeasured / ceiling:P0} of link ceiling"));
         }
-
-        if (report.TestResult.Write is { } write)
-            stats.Add(new ReportStat("Large File Write Peak", $"{write.PeakBurstMegabytesPerSecond:N1} MB/s"));
-        if (report.TestResult.Read is { } read)
-            stats.Add(new ReportStat("Large File Read Peak", $"{read.PeakBurstMegabytesPerSecond:N1} MB/s"));
 
         ExtraStats = new ObservableCollection<ReportStat>(stats);
     }

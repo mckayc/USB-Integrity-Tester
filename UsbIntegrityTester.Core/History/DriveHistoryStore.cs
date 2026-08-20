@@ -68,8 +68,8 @@ public sealed class DriveHistoryStore
         command.Parameters.AddWithValue("$verdict", report.Verdict.Verdict.ToString());
         command.Parameters.AddWithValue("$claimedCapacity", (long)report.ClaimedCapacityBytes);
         command.Parameters.AddWithValue("$verifiedGoodBytes", (object?)(long?)report.TestResult.Capacity?.VerifiedGoodBytes ?? DBNull.Value);
-        command.Parameters.AddWithValue("$avgWrite", (object?)report.TestResult.Write?.AverageMegabytesPerSecond ?? DBNull.Value);
-        command.Parameters.AddWithValue("$avgRead", (object?)report.TestResult.Read?.AverageMegabytesPerSecond ?? DBNull.Value);
+        command.Parameters.AddWithValue("$avgWrite", (object?)report.TestResult.Slot1?.Write.AverageMegabytesPerSecond ?? DBNull.Value);
+        command.Parameters.AddWithValue("$avgRead", (object?)report.TestResult.Slot1?.Read.AverageMegabytesPerSecond ?? DBNull.Value);
 
         command.ExecuteNonQuery();
     }

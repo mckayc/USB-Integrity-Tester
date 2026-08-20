@@ -8,16 +8,26 @@
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel Margin="24" MaxWidth="560" HorizontalAlignment="Left">
 
-            <TextBlock Text="USB Connections" FontSize="24" FontWeight="SemiBold" Margin="0,0,0,4"/>
-            <TextBlock Text="Reads the actual negotiated link speed from the USB hub, not just the port's nominal label."
-                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,20" TextWrapping="Wrap"/>
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
+                <Border Background="{DynamicResource ControlFillColorDefaultBrush}" CornerRadius="8"
+                        Width="40" Height="40" Margin="0,0,12,0">
+                    <ui:SymbolIcon Symbol="PlugConnected24" FontSize="20"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="USB Connections" FontSize="22" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                    <TextBlock Text="Reads the actual negotiated link speed from the USB hub, not just the port's nominal label."
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="12" TextWrapping="Wrap"/>
+                </StackPanel>
+            </StackPanel>
 
             <ui:CardControl Margin="0,0,0,16">
                 <ui:CardControl.Icon>
                     <ui:SymbolIcon Symbol="PlugConnected24"/>
                 </ui:CardControl.Icon>
                 <ui:CardControl.Header>
-                    <TextBlock Text="{Binding SelectedDrive.Model, StringFormat='Selected drive: {0}', FallbackValue='No drive selected'}" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding SelectedDrive.Model, StringFormat='Selected drive: {0}', FallbackValue='No drive selected'}" TextWrapping="Wrap"
+                               Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                 </ui:CardControl.Header>
             </ui:CardControl>
 
@@ -28,7 +38,8 @@
                 </ui:Button.Icon>
             </ui:Button>
 
-            <TextBlock Text="{Binding NegotiatedLinkSpeedText}" TextWrapping="Wrap" FontSize="16" Margin="0,0,0,16"/>
+            <TextBlock Text="{Binding NegotiatedLinkSpeedText}" TextWrapping="Wrap" FontSize="16" Margin="0,0,0,16"
+                       Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
 
             <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,20"
                        Text="A USB 3 port with a USB 2 hub or cable somewhere in the path will correctly show as High Speed here, even though the port itself is rated faster. If auto-detection ever looks wrong for your hardware, check the Logs tab for the step-by-step trace (it'll show exactly which lookup failed), and use the override below to set the port speed manually — reports and speed-ceiling comparisons will use whichever you set."/>
@@ -49,13 +60,13 @@
                     </Grid.RowDefinitions>
 
                     <TextBlock Grid.Row="0" Grid.Column="0" Text="Vendor / Product ID" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
-                    <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding DeviceIdText}" Margin="0,0,0,8"/>
+                    <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding DeviceIdText}" Margin="0,0,0,8" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
 
                     <TextBlock Grid.Row="1" Grid.Column="0" Text="Transport protocol" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
-                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding TransportText}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding TransportText}" TextWrapping="Wrap" Margin="0,0,0,8" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
 
                     <TextBlock Grid.Row="2" Grid.Column="0" Text="Hub position" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
-                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding HubHopsText}"/>
+                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding HubHopsText}" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                 </Grid>
             </ui:CardExpander>
 
@@ -64,7 +75,7 @@
                     <ui:SymbolIcon Symbol="DesktopPulse24"/>
                 </ui:CardExpander.Icon>
                 <StackPanel Margin="0,8,0,0">
-                    <TextBlock Text="{Binding SystemInfoText}" Margin="0,0,0,8"/>
+                    <TextBlock Text="{Binding SystemInfoText}" Margin="0,0,0,8" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                     <ui:InfoBar IsOpen="True" IsClosable="False"
                                 Severity="{Binding IsElevated, Converter={StaticResource ElevationSeverityConverter}}"
                                 Message="{Binding ElevationText}"/>
@@ -76,13 +87,14 @@
                     <ui:SymbolIcon Symbol="Settings24"/>
                 </ui:CardExpander.Icon>
                 <StackPanel Margin="0,8,0,0">
-                    <TextBlock Text="Actual port configuration" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                    <TextBlock Text="Actual port configuration" FontWeight="SemiBold" Margin="0,0,0,6" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                     <ComboBox ItemsSource="{Binding AvailableLinkSpeeds}"
                               SelectedItem="{Binding ManualLinkSpeedOverride}"
                               Margin="0,0,0,8">
                         <ComboBox.ItemTemplate>
                             <DataTemplate>
-                                <TextBlock Text="{Binding Converter={StaticResource UsbLinkSpeedDisplayConverter}}"/>
+                                <TextBlock Text="{Binding Converter={StaticResource UsbLinkSpeedDisplayConverter}}"
+                                           Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                             </DataTemplate>
                         </ComboBox.ItemTemplate>
                     </ComboBox>

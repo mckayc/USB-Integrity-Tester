@@ -32,6 +32,9 @@ public enum TestCleanupPolicy
     KeepUntilManual,
 }
 
+/// <summary>One of the speed test's 3 configurable slots — whether it runs, and which real-world file-size category it simulates.</summary>
+public sealed record SpeedTestSlotSettings(bool Enabled, SpeedTestCategory Category);
+
 public sealed record TestSettings
 {
     public TestMode TestMode { get; init; } = TestMode.File;
@@ -45,13 +48,13 @@ public sealed record TestSettings
 
     public bool RunCapacityTest { get; init; } = true;
     public bool RunSpeedTest { get; init; } = true;
-    public bool RunLargeFileSpeedTest { get; init; } = true;
-    public bool RunSmallFileSpeedTest { get; init; } = true;
-    public bool RunHugeFileSpeedTest { get; init; }
+
+    public SpeedTestSlotSettings SpeedTestSlot1 { get; init; } = new(true, SpeedTestCategory.StandardBenchmark);
+    public SpeedTestSlotSettings SpeedTestSlot2 { get; init; } = new(true, SpeedTestCategory.SmallFiles);
+    public SpeedTestSlotSettings SpeedTestSlot3 { get; init; } = new(true, SpeedTestCategory.MediumFiles);
+
     public CapacityScanDepth CapacityScanDepth { get; init; } = CapacityScanDepth.Quick;
-    public int BlockSizeBytes { get; init; } = 1024 * 1024; // 1 MiB — simulates copying one large file
-    public int SmallFileBlockSizeBytes { get; init; } = 4096; // 4 KiB — simulates copying many small files
-    public int HugeFileBlockSizeBytes { get; init; } = 100 * 1024 * 1024; // 100 MiB — simulates copying one huge file
+    public int BlockSizeBytes { get; init; } = 1024 * 1024; // 1 MiB — capacity test's block granularity
     public int QuickScanSampleCount { get; init; } = 256;
     public double StandardScanSampleFraction { get; init; } = 0.05;
     public TimeSpan SustainedSpeedTestDuration { get; init; } = TimeSpan.FromSeconds(20);

@@ -1,20 +1,14 @@
 namespace UsbIntegrityTester.Core.Testing;
 
+/// <summary>One speed test slot's result — which category it simulated, plus its write/read measurements.</summary>
+public sealed record SpeedTestSlotResult(SpeedTestCategory Category, SpeedTestResult Write, SpeedTestResult Read);
+
 public sealed record TestResult
 {
     public CapacityVerificationResult? Capacity { get; init; }
-
-    /// <summary>Large sequential blocks (1 MiB) — what you'd get copying one big file.</summary>
-    public SpeedTestResult? Write { get; init; }
-    public SpeedTestResult? Read { get; init; }
-
-    /// <summary>Small blocks (4 KiB) — what you'd get copying many small files. Often much slower on cheap drives.</summary>
-    public SpeedTestResult? SmallFileWrite { get; init; }
-    public SpeedTestResult? SmallFileRead { get; init; }
-
-    /// <summary>Huge blocks (100 MiB) — what you'd get copying one very large file (video export, disk image).</summary>
-    public SpeedTestResult? HugeFileWrite { get; init; }
-    public SpeedTestResult? HugeFileRead { get; init; }
+    public SpeedTestSlotResult? Slot1 { get; init; }
+    public SpeedTestSlotResult? Slot2 { get; init; }
+    public SpeedTestSlotResult? Slot3 { get; init; }
 }
 
 /// <summary>Orchestrates capacity verification and speed measurement against a raw physical drive.</summary>
@@ -24,10 +18,10 @@ public sealed class TestEngine
     private readonly SpeedTester _speedTester = new();
 
     /// <param name="waitForNextTest">
-    /// Called between top-level tests (Capacity, Large, Small, Huge — never between a test's own
-    /// write and read/verify passes) so a caller can pause the run there, e.g. to let a person
-    /// manually advance one test at a time while recording. Never called before the first test
-    /// that actually runs. Pass null to run straight through with no pauses.
+    /// Called between top-level tests (Capacity, then each enabled speed test slot — never between
+    /// a test's own write and read/verify passes) so a caller can pause the run there, e.g. to let
+    /// a person manually advance one test at a time while recording. Never called before the first
+    /// test that actually runs. Pass null to run straight through with no pauses.
     /// </param>
     public async Task<TestResult> RunAsync(
         RawDiskAccessor accessor, ulong claimedCapacityBytes, TestSettings settings,
@@ -35,12 +29,9 @@ public sealed class TestEngine
         Func<CancellationToken, Task>? waitForNextTest = null)
     {
         CapacityVerificationResult? capacityResult = null;
-        SpeedTestResult? writeResult = null;
-        SpeedTestResult? readResult = null;
-        SpeedTestResult? smallFileWriteResult = null;
-        SpeedTestResult? smallFileReadResult = null;
-        SpeedTestResult? hugeFileWriteResult = null;
-        SpeedTestResult? hugeFileReadResult = null;
+        SpeedTestSlotResult? slot1Result = null;
+        SpeedTestSlotResult? slot2Result = null;
+        SpeedTestSlotResult? slot3Result = null;
 
         var hasRunAnyTest = false;
         async Task GateAsync()
@@ -63,55 +54,13 @@ public sealed class TestEngine
             // Measure against a region known to be real storage: the verified-good region if we
             // just ran a capacity test, otherwise the first slice of the claimed capacity.
             var availableBytes = capacityResult?.VerifiedGoodBytes ?? claimedCapacityBytes;
-            var regionSize = Math.Min(availableBytes, 256UL * 1024 * 1024);
-            regionSize = Math.Max(regionSize, (ulong)settings.BlockSizeBytes);
 
-            if (settings.RunLargeFileSpeedTest)
-            {
-                await GateAsync();
-
-                // Large-file simulation: big sequential blocks — the best-case number drives are marketed on.
-                writeResult = await _speedTester.MeasureWriteSpeedAsync(
-                    accessor, 0, regionSize, settings.BlockSizeBytes, settings.SustainedSpeedTestDuration,
-                    TestPhase.MeasuringLargeFileWriteSpeed, progress, cancellationToken);
-
-                readResult = await _speedTester.MeasureReadSpeedAsync(
-                    accessor, 0, regionSize, settings.BlockSizeBytes, settings.SustainedSpeedTestDuration,
-                    TestPhase.MeasuringLargeFileReadSpeed, progress, cancellationToken);
-            }
-
-            if (settings.RunSmallFileSpeedTest)
-            {
-                await GateAsync();
-
-                // Small-file simulation: same region, much smaller blocks — this is where cheap
-                // controllers and thin caches usually fall apart, and it's rarely what's advertised.
-                smallFileWriteResult = await _speedTester.MeasureWriteSpeedAsync(
-                    accessor, 0, regionSize, settings.SmallFileBlockSizeBytes, settings.SustainedSpeedTestDuration,
-                    TestPhase.MeasuringSmallFileWriteSpeed, progress, cancellationToken);
-
-                smallFileReadResult = await _speedTester.MeasureReadSpeedAsync(
-                    accessor, 0, regionSize, settings.SmallFileBlockSizeBytes, settings.SustainedSpeedTestDuration,
-                    TestPhase.MeasuringSmallFileReadSpeed, progress, cancellationToken);
-            }
-
-            // Guarded separately: a 100 MiB block needs a region at least that big, which a tiny
-            // (or tiny-because-fake) drive might not have — skip rather than write past real storage.
-            if (settings.RunHugeFileSpeedTest && availableBytes >= (ulong)settings.HugeFileBlockSizeBytes)
-            {
-                await GateAsync();
-
-                var hugeRegionSize = Math.Min(availableBytes, 256UL * 1024 * 1024);
-                hugeRegionSize = Math.Max(hugeRegionSize, (ulong)settings.HugeFileBlockSizeBytes);
-
-                hugeFileWriteResult = await _speedTester.MeasureWriteSpeedAsync(
-                    accessor, 0, hugeRegionSize, settings.HugeFileBlockSizeBytes, settings.SustainedSpeedTestDuration,
-                    TestPhase.MeasuringHugeFileWriteSpeed, progress, cancellationToken);
-
-                hugeFileReadResult = await _speedTester.MeasureReadSpeedAsync(
-                    accessor, 0, hugeRegionSize, settings.HugeFileBlockSizeBytes, settings.SustainedSpeedTestDuration,
-                    TestPhase.MeasuringHugeFileReadSpeed, progress, cancellationToken);
-            }
+            slot1Result = await RunSlotAsync(accessor, settings.SpeedTestSlot1, availableBytes, settings,
+                TestPhase.MeasuringSpeedTestSlot1WriteSpeed, TestPhase.MeasuringSpeedTestSlot1ReadSpeed, GateAsync, progress, cancellationToken);
+            slot2Result = await RunSlotAsync(accessor, settings.SpeedTestSlot2, availableBytes, settings,
+                TestPhase.MeasuringSpeedTestSlot2WriteSpeed, TestPhase.MeasuringSpeedTestSlot2ReadSpeed, GateAsync, progress, cancellationToken);
+            slot3Result = await RunSlotAsync(accessor, settings.SpeedTestSlot3, availableBytes, settings,
+                TestPhase.MeasuringSpeedTestSlot3WriteSpeed, TestPhase.MeasuringSpeedTestSlot3ReadSpeed, GateAsync, progress, cancellationToken);
         }
 
         progress?.Report(new TestProgress
@@ -124,13 +73,46 @@ public sealed class TestEngine
         return new TestResult
         {
             Capacity = capacityResult,
-            Write = writeResult,
-            Read = readResult,
-            SmallFileWrite = smallFileWriteResult,
-            SmallFileRead = smallFileReadResult,
-            HugeFileWrite = hugeFileWriteResult,
-            HugeFileRead = hugeFileReadResult,
+            Slot1 = slot1Result,
+            Slot2 = slot2Result,
+            Slot3 = slot3Result,
         };
+    }
+
+    private async Task<SpeedTestSlotResult?> RunSlotAsync(
+        RawDiskAccessor accessor, SpeedTestSlotSettings slot, ulong availableBytes, TestSettings settings,
+        TestPhase writePhase, TestPhase readPhase, Func<Task> gateAsync,
+        IProgress<TestProgress>? progress, CancellationToken cancellationToken)
+    {
+        if (!slot.Enabled) return null;
+
+        var info = SpeedTestCategoryCatalog.Get(slot.Category);
+
+        // A tiny (or tiny-because-fake) drive might not have room for even the category's smallest
+        // file — skip rather than write past real storage. When it does have room but not quite
+        // enough for the category's largest file, shrink the effective max down to what's actually
+        // available instead of refusing to run at all.
+        if (availableBytes < (ulong)info.MinFileSizeBytes) return null;
+        var effectiveMaxBytes = Math.Min(info.MaxFileSizeBytes, (long)availableBytes);
+        var effectiveMinBytes = Math.Min(info.MinFileSizeBytes, effectiveMaxBytes);
+
+        // The working region needs room for a few files at the chosen size so writes actually wrap
+        // and rotate rather than just overwriting the same handful of bytes — but never more than
+        // what's actually verified-good.
+        var desiredRegion = Math.Max(256UL * 1024 * 1024, (ulong)effectiveMaxBytes * 2);
+        var regionSize = Math.Clamp(desiredRegion, (ulong)effectiveMaxBytes, availableBytes);
+
+        await gateAsync();
+
+        var writeResult = await _speedTester.MeasureWriteSpeedAsync(
+            accessor, 0, regionSize, effectiveMinBytes, effectiveMaxBytes, settings.SustainedSpeedTestDuration,
+            writePhase, progress, cancellationToken);
+
+        var readResult = await _speedTester.MeasureReadSpeedAsync(
+            accessor, 0, regionSize, effectiveMinBytes, effectiveMaxBytes, settings.SustainedSpeedTestDuration,
+            readPhase, progress, cancellationToken);
+
+        return new SpeedTestSlotResult(slot.Category, writeResult, readResult);
     }
 
     private static ulong GenerateRunSeed() => (ulong)DateTime.UtcNow.Ticks;

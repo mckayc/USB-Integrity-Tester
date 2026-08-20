@@ -15,13 +15,11 @@ public sealed class FileModeEngine
 
     private const int RotatingSpeedTestFileCount = 4;
 
-    /// <summary>Physical I/O granularity for the huge-file workload. Large/Small write or read
-    /// their whole file in one call, which is fine when that call takes milliseconds — but a 100 MB
-    /// huge file can take several seconds at USB speed, so doing it in one call means only a single
-    /// throughput sample for the whole file, and a trend line with almost nothing to draw. Chunking
-    /// it gives ~25 samples per 100 MB file instead of 1, while the file on disk is still one real,
-    /// contiguous 100 MB file — only the physical I/O calls are smaller.</summary>
-    private const int HugeFileIoChunkBytes = 4 * 1024 * 1024;
+    /// <summary>Physical I/O granularity for the speed test. A file can be anywhere from 100 KB to
+    /// 3 GB depending on the category — one call per whole file would take several seconds for the
+    /// bigger categories, leaving almost nothing for the trend line to draw. Chunking keeps samples
+    /// flowing regardless of file size, while the file on disk is still one real, contiguous file.</summary>
+    private const int IoChunkBytes = 4 * 1024 * 1024;
 
     public static string GetTestFolderPath(string volumeLetter) =>
         Path.Combine(volumeLetter.TrimEnd('\\') + "\\", TestFolderName);
@@ -41,9 +39,9 @@ public sealed class FileModeEngine
     }
 
     /// <param name="waitForNextTest">
-    /// Called between top-level tests (Capacity, Large, Small, Huge — never between a test's own
-    /// write and read passes) so a caller can pause the run there, e.g. to let a person manually
-    /// advance one test at a time while recording. Never called before the first test that
+    /// Called between top-level tests (Capacity, then each enabled speed test slot — never between
+    /// a test's own write and read passes) so a caller can pause the run there, e.g. to let a person
+    /// manually advance one test at a time while recording. Never called before the first test that
     /// actually runs. Pass null to run straight through with no pauses.
     /// </param>
     public async Task<TestResult> RunAsync(
@@ -54,10 +52,19 @@ public sealed class FileModeEngine
         var driveInfo = new System.IO.DriveInfo(volumeLetter);
         var testFolder = GetTestFolderPath(volumeLetter);
 
-        if (settings.ClearExistingData)
-            ClearDrive(volumeLetter, testFolder);
-        else
-            Directory.CreateDirectory(testFolder);
+        // Deleting everything on the drive — potentially tens of thousands of leftover files from
+        // a previous Full capacity scan — can take minutes. This method is called directly from the
+        // UI thread's command handler, and by default every `await` in it resumes back on that same
+        // thread, so without Task.Run this blocks the whole window with no way to tell it's still
+        // working rather than hung. Same reasoning applies everywhere else in this method that
+        // touches the filesystem synchronously.
+        await Task.Run(() =>
+        {
+            if (settings.ClearExistingData)
+                ClearDrive(volumeLetter, testFolder);
+            else
+                Directory.CreateDirectory(testFolder);
+        }, cancellationToken);
 
         // Recompute available space after any clearing, so the fill target reflects reality.
         driveInfo = new System.IO.DriveInfo(volumeLetter);
@@ -90,49 +97,84 @@ public sealed class FileModeEngine
                 testFolder, targetBytes, claimedCapacityBytes, settings.BlockSizeBytes, progress, cancellationToken);
         }
 
-        SpeedTestResult? writeResult = null, readResult = null;
-        SpeedTestResult? smallFileWriteResult = null, smallFileReadResult = null;
-        SpeedTestResult? hugeFileWriteResult = null, hugeFileReadResult = null;
-
+        SpeedTestSlotResult? slot1Result = null, slot2Result = null, slot3Result = null;
         if (settings.RunSpeedTest)
         {
-            if (settings.RunLargeFileSpeedTest)
+            // Clear whatever the previous test left behind (capacity test verification blocks, or
+            // an earlier slot's rotating files) before each enabled slot — not just at the very end
+            // of the whole run. A Full capacity scan can leave the drive nearly full; without this,
+            // the very next test can fail with a disk-full error before it even starts. Only ever
+            // one test's worth of files exists on disk at a time this way; the *last* test that
+            // runs is still left alone here, governed by CleanupPolicy at the end as before.
+            if (settings.SpeedTestSlot1.Enabled)
             {
-                await GateAsync();
-                writeResult = await MeasureWriteSpeedAsync(testFolder, "large", settings.BlockSizeBytes, settings.SustainedSpeedTestDuration, TestPhase.MeasuringLargeFileWriteSpeed, progress, cancellationToken);
-                readResult = await MeasureReadSpeedAsync(testFolder, "large", settings.BlockSizeBytes, settings.SustainedSpeedTestDuration, TestPhase.MeasuringLargeFileReadSpeed, progress, cancellationToken);
+                await Task.Run(() => ClearTestFolderContents(testFolder), cancellationToken);
+                slot1Result = await RunSlotAsync(testFolder, volumeLetter, "slot1", settings.SpeedTestSlot1,
+                    TestPhase.MeasuringSpeedTestSlot1WriteSpeed, TestPhase.MeasuringSpeedTestSlot1ReadSpeed,
+                    settings.SustainedSpeedTestDuration, GateAsync, progress, cancellationToken);
             }
 
-            if (settings.RunSmallFileSpeedTest)
+            if (settings.SpeedTestSlot2.Enabled)
             {
-                await GateAsync();
-                smallFileWriteResult = await MeasureWriteSpeedAsync(testFolder, "small", settings.SmallFileBlockSizeBytes, settings.SustainedSpeedTestDuration, TestPhase.MeasuringSmallFileWriteSpeed, progress, cancellationToken);
-                smallFileReadResult = await MeasureReadSpeedAsync(testFolder, "small", settings.SmallFileBlockSizeBytes, settings.SustainedSpeedTestDuration, TestPhase.MeasuringSmallFileReadSpeed, progress, cancellationToken);
+                await Task.Run(() => ClearTestFolderContents(testFolder), cancellationToken);
+                slot2Result = await RunSlotAsync(testFolder, volumeLetter, "slot2", settings.SpeedTestSlot2,
+                    TestPhase.MeasuringSpeedTestSlot2WriteSpeed, TestPhase.MeasuringSpeedTestSlot2ReadSpeed,
+                    settings.SustainedSpeedTestDuration, GateAsync, progress, cancellationToken);
             }
 
-            if (settings.RunHugeFileSpeedTest && fullTarget >= (ulong)settings.HugeFileBlockSizeBytes * RotatingSpeedTestFileCount)
+            if (settings.SpeedTestSlot3.Enabled)
             {
-                await GateAsync();
-                hugeFileWriteResult = await MeasureHugeFileWriteSpeedAsync(testFolder, settings.HugeFileBlockSizeBytes, HugeFileIoChunkBytes, settings.SustainedSpeedTestDuration, TestPhase.MeasuringHugeFileWriteSpeed, progress, cancellationToken);
-                hugeFileReadResult = await MeasureHugeFileReadSpeedAsync(testFolder, settings.HugeFileBlockSizeBytes, HugeFileIoChunkBytes, settings.SustainedSpeedTestDuration, TestPhase.MeasuringHugeFileReadSpeed, progress, cancellationToken);
+                await Task.Run(() => ClearTestFolderContents(testFolder), cancellationToken);
+                slot3Result = await RunSlotAsync(testFolder, volumeLetter, "slot3", settings.SpeedTestSlot3,
+                    TestPhase.MeasuringSpeedTestSlot3WriteSpeed, TestPhase.MeasuringSpeedTestSlot3ReadSpeed,
+                    settings.SustainedSpeedTestDuration, GateAsync, progress, cancellationToken);
             }
         }
 
         if (settings.CleanupPolicy == TestCleanupPolicy.DeleteAfterTest)
-            TryDeleteTestFolder(volumeLetter);
+            await Task.Run(() => TryDeleteTestFolder(volumeLetter), CancellationToken.None);
 
         progress?.Report(new TestProgress { Phase = TestPhase.Complete, BytesProcessed = 1, TotalBytes = 1 });
 
         return new TestResult
         {
             Capacity = capacityResult,
-            Write = writeResult,
-            Read = readResult,
-            SmallFileWrite = smallFileWriteResult,
-            SmallFileRead = smallFileReadResult,
-            HugeFileWrite = hugeFileWriteResult,
-            HugeFileRead = hugeFileReadResult,
+            Slot1 = slot1Result,
+            Slot2 = slot2Result,
+            Slot3 = slot3Result,
         };
+    }
+
+    private static async Task<SpeedTestSlotResult?> RunSlotAsync(
+        string testFolder, string volumeLetter, string filePrefix, SpeedTestSlotSettings slot,
+        TestPhase writePhase, TestPhase readPhase, TimeSpan duration, Func<Task> gateAsync,
+        IProgress<TestProgress>? progress, CancellationToken cancellationToken)
+    {
+        if (!slot.Enabled) return null;
+
+        var info = SpeedTestCategoryCatalog.Get(slot.Category);
+
+        // Query the volume's real, current free space rather than trusting a number computed once
+        // at the very start of the run — that number (95% of total drive size) has no relationship
+        // to what's actually free after a capacity test and however many earlier slots have run, and
+        // trusting it is exactly what caused this slot to try writing into a drive that turned out
+        // to still be full. A 10% margin covers filesystem overhead and whatever couldn't be cleared.
+        var availableBytes = (ulong)(new System.IO.DriveInfo(volumeLetter).AvailableFreeSpace * 0.9);
+
+        // A tiny (or tiny-because-fake, or still-full) drive might not have room for a handful of
+        // even the category's smallest file — skip rather than fail this slot outright.
+        if (availableBytes < (ulong)info.MinFileSizeBytes * RotatingSpeedTestFileCount) return null;
+        var effectiveMaxBytes = Math.Min(info.MaxFileSizeBytes, (long)availableBytes / RotatingSpeedTestFileCount);
+        var effectiveMinBytes = Math.Min(info.MinFileSizeBytes, effectiveMaxBytes);
+
+        await gateAsync();
+
+        var writeResult = await MeasureWriteSpeedAsync(
+            testFolder, filePrefix, effectiveMinBytes, effectiveMaxBytes, duration, writePhase, progress, cancellationToken);
+        var readResult = await MeasureReadSpeedAsync(
+            testFolder, filePrefix, effectiveMinBytes, effectiveMaxBytes, duration, readPhase, progress, cancellationToken);
+
+        return new SpeedTestSlotResult(slot.Category, writeResult, readResult);
     }
 
     private static void ClearDrive(string volumeLetter, string testFolder)
@@ -153,6 +195,30 @@ public sealed class FileModeEngine
         }
 
         Directory.CreateDirectory(testFolder);
+    }
+
+    /// <summary>Deletes everything inside the test folder (but recreates the folder itself) — used
+    /// between tests within a single run to free the space a previous test's files were using,
+    /// independent of the user's end-of-run CleanupPolicy. A Full capacity scan can leave tens of
+    /// thousands of tiny verification-block files behind; deleting them one at a time while also
+    /// enumerating the same directory is exactly the kind of thing that silently under-deletes on
+    /// some filesystems, so this removes the whole directory tree in one call instead — the same
+    /// proven approach <see cref="TryDeleteTestFolder"/> already uses.</summary>
+    private static void ClearTestFolderContents(string testFolder)
+    {
+        try
+        {
+            if (Directory.Exists(testFolder)) Directory.Delete(testFolder, recursive: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Best-effort, same tolerance as ClearDrive/TryDeleteTestFolder — the fresh free-space
+            // check in RunSlotAsync is what actually protects the next test, not this succeeding.
+        }
+        finally
+        {
+            Directory.CreateDirectory(testFolder);
+        }
     }
 
     private static Task<CapacityVerificationResult> RunCapacityTestAsync(
@@ -261,74 +327,41 @@ public sealed class FileModeEngine
         };
     }, cancellationToken);
 
+    /// <summary>Writes a rotating set of files with randomized sizes in [minFileSizeBytes,
+    /// maxFileSizeBytes], each in <see cref="IoChunkBytes"/>-sized physical writes so even a
+    /// multi-gigabyte file still produces plenty of throughput samples.</summary>
     private static Task<SpeedTestResult> MeasureWriteSpeedAsync(
-        string folder, string prefix, int blockSize, TimeSpan duration, TestPhase phase,
+        string folder, string prefix, long minFileSizeBytes, long maxFileSizeBytes, TimeSpan duration, TestPhase phase,
         IProgress<TestProgress>? progress, CancellationToken cancellationToken) => Task.Run(() =>
     {
-        var buffer = new byte[blockSize];
-        CapacityVerifier.FillDeterministicBlock(buffer, seed: 0xA5A5A5A5UL, blockOffset: 0);
-
-        return RunTimedFileLoop(duration, phase, progress, cancellationToken, fileIndex =>
-        {
-            var path = Path.Combine(folder, $"{prefix}_speedtest_{fileIndex % RotatingSpeedTestFileCount}.bin");
-            UnbufferedFile.WriteAllBytes(path, buffer, blockSize);
-        }, blockSize);
-    }, cancellationToken);
-
-    private static Task<SpeedTestResult> MeasureReadSpeedAsync(
-        string folder, string prefix, int blockSize, TimeSpan duration, TestPhase phase,
-        IProgress<TestProgress>? progress, CancellationToken cancellationToken) => Task.Run(() =>
-    {
-        var buffer = new byte[blockSize];
-        CapacityVerifier.FillDeterministicBlock(buffer, seed: 0xA5A5A5A5UL, blockOffset: 0);
-
-        // Read needs the rotating files to already exist — write them once, untimed, first.
-        for (var i = 0; i < RotatingSpeedTestFileCount; i++)
-        {
-            var path = Path.Combine(folder, $"{prefix}_speedtest_{i}.bin");
-            if (!File.Exists(path)) UnbufferedFile.WriteAllBytes(path, buffer, blockSize);
-        }
-
-        // Only 4 files rotate for the whole test — with ordinary buffered I/O, Windows' file
-        // cache would hold onto them after this first pass and every subsequent "read" would
-        // measure RAM bandwidth, not the drive. UnbufferedFile forces every read to the device.
-        return RunTimedFileLoop(duration, phase, progress, cancellationToken, fileIndex =>
-        {
-            var path = Path.Combine(folder, $"{prefix}_speedtest_{fileIndex % RotatingSpeedTestFileCount}.bin");
-            UnbufferedFile.ReadAllBytes(path, buffer, blockSize);
-        }, blockSize);
-    }, cancellationToken);
-
-    /// <summary>Writes the huge-file workload in <see cref="HugeFileIoChunkBytes"/>-sized chunks
-    /// rather than one call per whole 100 MB file, so the trend line actually has something to
-    /// draw. Cycles through the same rotating file set as the other workloads.</summary>
-    private static Task<SpeedTestResult> MeasureHugeFileWriteSpeedAsync(
-        string folder, int fileSizeBytes, int chunkSizeBytes, TimeSpan duration, TestPhase phase,
-        IProgress<TestProgress>? progress, CancellationToken cancellationToken) => Task.Run(() =>
-    {
-        var chunkBuffer = new byte[chunkSizeBytes];
+        var rng = Random.Shared;
+        var chunkBuffer = new byte[IoChunkBytes];
         CapacityVerifier.FillDeterministicBlock(chunkBuffer, seed: 0xA5A5A5A5UL, blockOffset: 0);
 
         UnbufferedFile.ChunkedWriter? writer = null;
-        var bytesInCurrentFile = 0;
+        long targetFileSize = 0;
+        long bytesInCurrentFile = 0;
         var fileIndex = 0;
 
         try
         {
-            return RunTimedFileLoop(duration, phase, progress, cancellationToken, _ =>
+            return RunTimedByteLoop(duration, phase, progress, cancellationToken, () =>
             {
-                if (writer is null || bytesInCurrentFile >= fileSizeBytes)
+                if (writer is null || bytesInCurrentFile >= targetFileSize)
                 {
                     writer?.Dispose();
-                    var path = Path.Combine(folder, $"huge_speedtest_{fileIndex % RotatingSpeedTestFileCount}.bin");
+                    targetFileSize = FileSizeRandomizer.NextAlignedSize(rng, minFileSizeBytes, maxFileSizeBytes);
+                    var path = Path.Combine(folder, $"{prefix}_speedtest_{fileIndex % RotatingSpeedTestFileCount}.bin");
                     writer = new UnbufferedFile.ChunkedWriter(path);
                     bytesInCurrentFile = 0;
                     fileIndex++;
                 }
 
-                writer.WriteChunk(chunkBuffer, chunkSizeBytes);
-                bytesInCurrentFile += chunkSizeBytes;
-            }, chunkSizeBytes);
+                var thisChunk = (int)Math.Min(IoChunkBytes, targetFileSize - bytesInCurrentFile);
+                writer.WriteChunk(chunkBuffer, thisChunk);
+                bytesInCurrentFile += thisChunk;
+                return thisChunk;
+            });
         }
         finally
         {
@@ -336,46 +369,53 @@ public sealed class FileModeEngine
         }
     }, cancellationToken);
 
-    /// <summary>The read counterpart to <see cref="MeasureHugeFileWriteSpeedAsync"/>.</summary>
-    private static Task<SpeedTestResult> MeasureHugeFileReadSpeedAsync(
-        string folder, int fileSizeBytes, int chunkSizeBytes, TimeSpan duration, TestPhase phase,
+    /// <summary>The read counterpart to <see cref="MeasureWriteSpeedAsync"/> — pre-writes a rotating
+    /// set of randomly-sized files up front (untimed), then reads them back in chunks.</summary>
+    private static Task<SpeedTestResult> MeasureReadSpeedAsync(
+        string folder, string prefix, long minFileSizeBytes, long maxFileSizeBytes, TimeSpan duration, TestPhase phase,
         IProgress<TestProgress>? progress, CancellationToken cancellationToken) => Task.Run(() =>
     {
-        var seedBuffer = new byte[chunkSizeBytes];
-        CapacityVerifier.FillDeterministicBlock(seedBuffer, seed: 0xA5A5A5A5UL, blockOffset: 0);
+        var rng = Random.Shared;
+        var chunkBuffer = new byte[IoChunkBytes];
+        CapacityVerifier.FillDeterministicBlock(chunkBuffer, seed: 0xA5A5A5A5UL, blockOffset: 0);
 
-        // Read needs the rotating files to already exist, fully sized — write them once, untimed, first.
+        var fileSizes = new long[RotatingSpeedTestFileCount];
         for (var i = 0; i < RotatingSpeedTestFileCount; i++)
         {
-            var path = Path.Combine(folder, $"huge_speedtest_{i}.bin");
-            if (File.Exists(path) && new FileInfo(path).Length == fileSizeBytes) continue;
+            var path = Path.Combine(folder, $"{prefix}_speedtest_{i}.bin");
+            var size = FileSizeRandomizer.NextAlignedSize(rng, minFileSizeBytes, maxFileSizeBytes);
+            fileSizes[i] = size;
 
             using var seedWriter = new UnbufferedFile.ChunkedWriter(path);
-            for (var written = 0; written < fileSizeBytes; written += chunkSizeBytes)
-                seedWriter.WriteChunk(seedBuffer, chunkSizeBytes);
+            for (long written = 0; written < size; written += IoChunkBytes)
+                seedWriter.WriteChunk(chunkBuffer, (int)Math.Min(IoChunkBytes, size - written));
         }
 
-        var chunkBuffer = new byte[chunkSizeBytes];
         UnbufferedFile.ChunkedReader? reader = null;
-        var bytesInCurrentFile = 0;
+        long currentFileSize = 0;
+        long bytesInCurrentFile = 0;
         var fileIndex = 0;
 
         try
         {
-            return RunTimedFileLoop(duration, phase, progress, cancellationToken, _ =>
+            return RunTimedByteLoop(duration, phase, progress, cancellationToken, () =>
             {
-                if (reader is null || bytesInCurrentFile >= fileSizeBytes)
+                if (reader is null || bytesInCurrentFile >= currentFileSize)
                 {
                     reader?.Dispose();
-                    var path = Path.Combine(folder, $"huge_speedtest_{fileIndex % RotatingSpeedTestFileCount}.bin");
+                    var slot = fileIndex % RotatingSpeedTestFileCount;
+                    var path = Path.Combine(folder, $"{prefix}_speedtest_{slot}.bin");
                     reader = new UnbufferedFile.ChunkedReader(path);
+                    currentFileSize = fileSizes[slot];
                     bytesInCurrentFile = 0;
                     fileIndex++;
                 }
 
-                reader.ReadChunk(chunkBuffer, chunkSizeBytes);
-                bytesInCurrentFile += chunkSizeBytes;
-            }, chunkSizeBytes);
+                var thisChunk = (int)Math.Min(IoChunkBytes, currentFileSize - bytesInCurrentFile);
+                reader.ReadChunk(chunkBuffer, thisChunk);
+                bytesInCurrentFile += thisChunk;
+                return thisChunk;
+            });
         }
         finally
         {
@@ -383,32 +423,30 @@ public sealed class FileModeEngine
         }
     }, cancellationToken);
 
-    private static SpeedTestResult RunTimedFileLoop(
+    /// <summary><paramref name="performIoChunk"/> does one physical chunk of I/O and returns how
+    /// many bytes it moved; throughput is sampled by elapsed time, not a fixed chunk count, so it
+    /// stays accurate regardless of how big each chunk or simulated file is.</summary>
+    private static SpeedTestResult RunTimedByteLoop(
         TimeSpan duration, TestPhase phase, IProgress<TestProgress>? progress,
-        CancellationToken cancellationToken, Action<int> performFileIo, int blockSize)
+        CancellationToken cancellationToken, Func<int> performIoChunk)
     {
-        const int SampleWindowFiles = 3;
         var sampleWindowInterval = TimeSpan.FromMilliseconds(250);
 
         var stopwatch = Stopwatch.StartNew();
         var windowStopwatch = Stopwatch.StartNew();
         var samples = new List<double>();
-        var filesInWindow = 0;
-        var fileIndex = 0;
+        long bytesInWindow = 0;
         double peak = 0;
 
         while (stopwatch.Elapsed < duration)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            bytesInWindow += performIoChunk();
 
-            performFileIo(fileIndex);
-            fileIndex++;
-            filesInWindow++;
-
-            if (filesInWindow >= SampleWindowFiles || windowStopwatch.Elapsed >= sampleWindowInterval)
+            if (windowStopwatch.Elapsed >= sampleWindowInterval)
             {
                 var windowSeconds = windowStopwatch.Elapsed.TotalSeconds;
-                var windowMegabytes = filesInWindow * blockSize / 1_000_000.0;
+                var windowMegabytes = bytesInWindow / 1_000_000.0;
                 var mbPerSec = windowSeconds > 0 ? windowMegabytes / windowSeconds : 0;
                 samples.Add(mbPerSec);
                 peak = Math.Max(peak, mbPerSec);
@@ -422,7 +460,7 @@ public sealed class FileModeEngine
                     CurrentThroughputMegabytesPerSecond = mbPerSec,
                 });
 
-                filesInWindow = 0;
+                bytesInWindow = 0;
                 windowStopwatch.Restart();
             }
         }

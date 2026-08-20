@@ -39,12 +39,15 @@ public class FraudDetectorTests
                 BlocksTested = 100,
                 BlocksFailed = 0,
             },
-            Read = new SpeedTestResult
-            {
-                AverageMegabytesPerSecond = 20,
-                PeakBurstMegabytesPerSecond = 40,
-                SampledMegabytesPerSecond = new List<double> { 20 },
-            },
+            Slot1 = new SpeedTestSlotResult(
+                SpeedTestCategory.StandardBenchmark,
+                Write: new SpeedTestResult { AverageMegabytesPerSecond = 0, PeakBurstMegabytesPerSecond = 0, SampledMegabytesPerSecond = Array.Empty<double>() },
+                Read: new SpeedTestResult
+                {
+                    AverageMegabytesPerSecond = 20,
+                    PeakBurstMegabytesPerSecond = 40,
+                    SampledMegabytesPerSecond = new List<double> { 20 },
+                }),
         };
 
         var verdict = FraudDetector.Evaluate(
@@ -65,18 +68,20 @@ public class FraudDetectorTests
                 BlocksTested = 100,
                 BlocksFailed = 0,
             },
-            Read = new SpeedTestResult
-            {
-                AverageMegabytesPerSecond = 95,
-                PeakBurstMegabytesPerSecond = 110,
-                SampledMegabytesPerSecond = new List<double> { 95 },
-            },
-            Write = new SpeedTestResult
-            {
-                AverageMegabytesPerSecond = 5,
-                PeakBurstMegabytesPerSecond = 8,
-                SampledMegabytesPerSecond = new List<double> { 5 },
-            },
+            Slot1 = new SpeedTestSlotResult(
+                SpeedTestCategory.StandardBenchmark,
+                Write: new SpeedTestResult
+                {
+                    AverageMegabytesPerSecond = 5,
+                    PeakBurstMegabytesPerSecond = 8,
+                    SampledMegabytesPerSecond = new List<double> { 5 },
+                },
+                Read: new SpeedTestResult
+                {
+                    AverageMegabytesPerSecond = 95,
+                    PeakBurstMegabytesPerSecond = 110,
+                    SampledMegabytesPerSecond = new List<double> { 95 },
+                }),
         };
 
         var verdict = FraudDetector.Evaluate(
@@ -97,18 +102,20 @@ public class FraudDetectorTests
                 BlocksTested = 100,
                 BlocksFailed = 0,
             },
-            Read = new SpeedTestResult
-            {
-                AverageMegabytesPerSecond = 95,
-                PeakBurstMegabytesPerSecond = 110,
-                SampledMegabytesPerSecond = new List<double> { 95 },
-            },
-            Write = new SpeedTestResult
-            {
-                AverageMegabytesPerSecond = 28,
-                PeakBurstMegabytesPerSecond = 35,
-                SampledMegabytesPerSecond = new List<double> { 28 },
-            },
+            Slot1 = new SpeedTestSlotResult(
+                SpeedTestCategory.StandardBenchmark,
+                Write: new SpeedTestResult
+                {
+                    AverageMegabytesPerSecond = 28,
+                    PeakBurstMegabytesPerSecond = 35,
+                    SampledMegabytesPerSecond = new List<double> { 28 },
+                },
+                Read: new SpeedTestResult
+                {
+                    AverageMegabytesPerSecond = 95,
+                    PeakBurstMegabytesPerSecond = 110,
+                    SampledMegabytesPerSecond = new List<double> { 95 },
+                }),
         };
 
         var verdict = FraudDetector.Evaluate(

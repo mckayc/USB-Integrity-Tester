@@ -5,17 +5,13 @@ public enum TestPhase
     WritingCapacityPattern,
     VerifyingCapacityPattern,
 
-    /// <summary>Large sequential blocks (1 MiB) — simulates copying a big single file.</summary>
-    MeasuringLargeFileWriteSpeed,
-    MeasuringLargeFileReadSpeed,
-
-    /// <summary>Small blocks (4 KiB) — simulates copying many small files, often the weak point of cheap drives.</summary>
-    MeasuringSmallFileWriteSpeed,
-    MeasuringSmallFileReadSpeed,
-
-    /// <summary>Huge blocks (100 MiB) — simulates copying one very large file, e.g. a video export or disk image.</summary>
-    MeasuringHugeFileWriteSpeed,
-    MeasuringHugeFileReadSpeed,
+    /// <summary>The speed test's 3 configurable slots — each simulates whichever <see cref="SpeedTestCategory"/> was picked for that slot, with randomized file sizes across its range.</summary>
+    MeasuringSpeedTestSlot1WriteSpeed,
+    MeasuringSpeedTestSlot1ReadSpeed,
+    MeasuringSpeedTestSlot2WriteSpeed,
+    MeasuringSpeedTestSlot2ReadSpeed,
+    MeasuringSpeedTestSlot3WriteSpeed,
+    MeasuringSpeedTestSlot3ReadSpeed,
 
     Complete,
 }

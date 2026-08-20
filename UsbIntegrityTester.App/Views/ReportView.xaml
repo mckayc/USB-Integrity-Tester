@@ -5,50 +5,71 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:UsbIntegrityTester.App.ViewModels"
-             xmlns:controls="clr-namespace:UsbIntegrityTester.App.Controls"
+             xmlns:local="clr-namespace:UsbIntegrityTester.App"
              mc:Ignorable="d" d:DesignWidth="900">
     <UserControl.Resources>
-        <DataTemplate DataType="{x:Type vm:SpeedComparisonRow}">
-            <Grid Margin="0,0,0,10">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="150"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="150"/>
-                </Grid.ColumnDefinitions>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
+        <local:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibility"/>
 
-                <TextBlock Grid.Column="0" Text="{Binding Label}" VerticalAlignment="Center" TextWrapping="Wrap"/>
-
-                <Grid Grid.Column="1" Height="14" VerticalAlignment="Center" Margin="12,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="{Binding BarFraction, Converter={StaticResource FractionToStarConverter}}"/>
-                        <ColumnDefinition Width="{Binding RemainderFraction, Converter={StaticResource FractionToStarConverter}}"/>
-                    </Grid.ColumnDefinitions>
-                    <Border Grid.Column="0" Background="{Binding BarBrush}" CornerRadius="3"/>
-                    <Border Grid.Column="1" Background="{DynamicResource ControlFillColorDefaultBrush}" CornerRadius="3" Margin="2,0,0,0"/>
-                </Grid>
-
-                <StackPanel Grid.Column="2">
-                    <TextBlock Text="{Binding MeasuredText}" FontWeight="SemiBold"/>
-                    <TextBlock Text="{Binding DetailText}" FontSize="11"
-                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
-                </StackPanel>
-            </Grid>
-        </DataTemplate>
-
-        <DataTemplate DataType="{x:Type vm:ReportTrendCard}">
+        <!-- One speed test category's full report: claimed-vs-measured numbers for both
+             directions, then a plain-language "how long would this actually take" paragraph.
+             Deliberately text and numbers only — no bars, no charts. -->
+        <DataTemplate DataType="{x:Type vm:SpeedTestSlotReportRow}">
             <Border Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
                     BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"
-                    CornerRadius="8" Padding="12" Width="220" Margin="0,0,10,10">
+                    CornerRadius="8" Padding="16" Margin="0,0,0,16">
                 <StackPanel>
-                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,4"/>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                        <TextBlock Text="{Binding AverageText}" FontSize="11" Margin="0,0,10,0"
-                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
-                        <TextBlock Text="{Binding PeakText}" FontSize="11"
-                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
-                    </StackPanel>
-                    <controls:Sparkline Points="{Binding Points}" Stroke="{Binding Stroke}" Fill="{Binding Fill}"
-                                         Height="56" StrokeThickness="2"/>
+                    <TextBlock FontSize="16" FontWeight="SemiBold" Margin="0,0,0,2" Foreground="{DynamicResource TextFillColorPrimaryBrush}">
+                        <Run Text="{Binding CategoryName, Mode=OneWay}"/>
+                        <Run Text=" — " Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
+                        <Run Text="{Binding WorkloadDescription, Mode=OneWay}" Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontWeight="Normal"/>
+                    </TextBlock>
+                    <TextBlock Text="{Binding SizeRangeText, StringFormat='File size tested: {0}'}" FontSize="12"
+                               Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,0,0,12"/>
+
+                    <Grid Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="16"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="WRITE" FontSize="11" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,2"/>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{Binding WriteAvgText}" FontSize="24" FontWeight="Bold" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                <TextBlock Text="✓" FontSize="16" FontWeight="Bold" VerticalAlignment="Center" Margin="6,0,0,0" Foreground="#2ECC71"
+                                           Visibility="{Binding WriteMeetsClaim, Converter={StaticResource BoolToVisibility}}"/>
+                                <TextBlock Text="▼" FontSize="14" FontWeight="Bold" VerticalAlignment="Center" Margin="6,0,0,0" Foreground="#E74C3C"
+                                           Visibility="{Binding WriteMeetsClaim, Converter={StaticResource InverseBoolToVisibility}}"/>
+                            </StackPanel>
+                            <TextBlock FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}">
+                                <Run Text="{Binding WritePeakText, Mode=OneWay}"/>
+                                <Run Text="{Binding WriteClaimText, Mode=OneWay, StringFormat=' · {0}'}"/>
+                            </TextBlock>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="2">
+                            <TextBlock Text="READ" FontSize="11" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,2"/>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{Binding ReadAvgText}" FontSize="24" FontWeight="Bold" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                <TextBlock Text="✓" FontSize="16" FontWeight="Bold" VerticalAlignment="Center" Margin="6,0,0,0" Foreground="#2ECC71"
+                                           Visibility="{Binding ReadMeetsClaim, Converter={StaticResource BoolToVisibility}}"/>
+                                <TextBlock Text="▼" FontSize="14" FontWeight="Bold" VerticalAlignment="Center" Margin="6,0,0,0" Foreground="#E74C3C"
+                                           Visibility="{Binding ReadMeetsClaim, Converter={StaticResource InverseBoolToVisibility}}"/>
+                            </StackPanel>
+                            <TextBlock FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}">
+                                <Run Text="{Binding ReadPeakText, Mode=OneWay}"/>
+                                <Run Text="{Binding ReadClaimText, Mode=OneWay, StringFormat=' · {0}'}"/>
+                            </TextBlock>
+                        </StackPanel>
+                    </Grid>
+
+                    <Border Background="{DynamicResource ControlFillColorDefaultBrush}" CornerRadius="6" Padding="12,10">
+                        <TextBlock Text="{Binding PracticalTimeText}" FontSize="13" TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                    </Border>
                 </StackPanel>
             </Border>
         </DataTemplate>
@@ -56,14 +77,15 @@
         <DataTemplate DataType="{x:Type vm:ReportStat}">
             <StackPanel Margin="0,0,20,12" MinWidth="160">
                 <TextBlock Text="{Binding Label}" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
-                <TextBlock Text="{Binding Value}" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                <TextBlock Text="{Binding Value}" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
             </StackPanel>
         </DataTemplate>
     </UserControl.Resources>
 
     <DockPanel Margin="24">
         <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,16">
-            <TextBlock Text="Report" FontSize="24" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,16,0"/>
+            <TextBlock Text="Report" FontSize="24" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,16,0"
+                       Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
             <ui:Button Content="Export Report as PNG" Click="ExportReportPng_Click" Padding="12,6">
                 <ui:Button.Icon>
                     <ui:SymbolIcon Symbol="ArrowExportUp24"/>
@@ -95,51 +117,36 @@
                         </StackPanel>
                     </Border>
 
-                    <!-- Capacity meter -->
-                    <TextBlock Text="Capacity" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                    <!-- Capacity, in numbers -->
+                    <TextBlock Text="Capacity" FontWeight="SemiBold" Margin="0,0,0,8" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                     <Border Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
                             BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"
                             CornerRadius="8" Padding="16" Margin="0,0,0,20">
                         <StackPanel>
-                            <TextBlock Text="{Binding CapacitySummary.HeadlineText}" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                            <TextBlock Text="{Binding CapacitySummary.HeadlineText}" FontSize="20" FontWeight="Bold" Margin="0,0,0,4"
+                                       Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                             <TextBlock Text="{Binding CapacitySummary.DetailText}" FontSize="13"
-                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,12"/>
-
-                            <Grid Height="16">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="{Binding CapacitySummary.VerifiedFraction, Converter={StaticResource FractionToStarConverter}}"/>
-                                    <ColumnDefinition Width="{Binding CapacitySummary.RemainderFraction, Converter={StaticResource FractionToStarConverter}}"/>
-                                </Grid.ColumnDefinitions>
-                                <Border Grid.Column="0" Background="{Binding CapacitySummary.BarBrush}" CornerRadius="4"/>
-                                <Border Grid.Column="1" Background="{DynamicResource ControlFillColorDefaultBrush}" CornerRadius="4" Margin="2,0,0,0"/>
-                            </Grid>
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,10"/>
+                            <TextBlock Text="{Binding CapacitySummary.ScanThoroughnessText}" FontSize="12" TextWrapping="Wrap"
+                                       Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
                         </StackPanel>
                     </Border>
 
-                    <!-- Speed: claimed vs. measured -->
-                    <TextBlock Text="Speed: Claimed vs. Measured" FontWeight="SemiBold" Margin="0,0,0,12"/>
-                    <ItemsControl ItemsSource="{Binding SpeedComparisonRows}" Margin="0,0,0,20"/>
-
-                    <!-- Burst vs. sustained trend, one card per workload -->
-                    <TextBlock Text="Burst vs. Sustained Throughput — reveals a cache cliff if the drive has one" FontWeight="SemiBold" Margin="0,0,0,12"/>
-                    <ItemsControl ItemsSource="{Binding TrendCards}" Margin="0,0,0,20">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <WrapPanel/>
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                    </ItemsControl>
+                    <!-- Speed tests: numbers plus practical transfer-time estimates -->
+                    <TextBlock Text="Speed Tests" FontWeight="SemiBold" Margin="0,0,0,12" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                    <ItemsControl ItemsSource="{Binding SpeedTestRows}" Margin="0,0,0,8"/>
 
                     <!-- Everything else, numerically -->
-                    <TextBlock Text="Details" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                    <TextBlock Text="Details" FontWeight="SemiBold" Margin="0,0,0,4" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                     <WrapPanel Margin="0,0,0,4">
                         <StackPanel Margin="0,0,20,12" MinWidth="160">
                             <TextBlock Text="Serial Number" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
-                            <TextBlock Text="{Binding LastReport.SerialNumber}" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                            <TextBlock Text="{Binding LastReport.SerialNumber}" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap"
+                                       Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                         </StackPanel>
                         <StackPanel Margin="0,0,20,12" MinWidth="160">
                             <TextBlock Text="Claimed Capacity" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
-                            <TextBlock FontSize="15" FontWeight="SemiBold">
+                            <TextBlock FontSize="15" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorPrimaryBrush}">
                                 <TextBlock.Text>
                                     <Binding Path="LastReport.ClaimedCapacityBytes" StringFormat="{}{0:N1} GB" Converter="{StaticResource BytesToGbConverter}"/>
                                 </TextBlock.Text>

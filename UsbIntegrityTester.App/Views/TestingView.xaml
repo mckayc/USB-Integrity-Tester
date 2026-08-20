@@ -104,7 +104,8 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <Ellipse Grid.Column="0" Style="{StaticResource LiveDotStyle}"/>
-                        <TextBlock Grid.Column="1" Text="{Binding Title}" FontWeight="SemiBold" FontSize="14" TextWrapping="Wrap"/>
+                        <TextBlock Grid.Column="1" Text="{Binding Title}" FontWeight="SemiBold" FontSize="14" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                         <TextBlock Grid.Column="2" Text="{Binding StatusText}" FontSize="12" Margin="8,0,0,0"
                                    Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
                     </Grid>
@@ -139,7 +140,8 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <Ellipse Grid.Column="0" Style="{StaticResource LiveDotStyle}"/>
-                        <TextBlock Grid.Column="1" Text="{Binding Title}" FontWeight="SemiBold" FontSize="14" TextWrapping="Wrap"/>
+                        <TextBlock Grid.Column="1" Text="{Binding Title}" FontWeight="SemiBold" FontSize="14" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                         <TextBlock Grid.Column="2" Text="{Binding StatusText}" FontSize="12" Margin="8,0,0,0"
                                    Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
                     </Grid>
@@ -153,7 +155,7 @@
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" Text="{Binding Primary.Label}" FontSize="12" FontWeight="SemiBold"/>
+                        <TextBlock Grid.Column="0" Text="{Binding Primary.Label}" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                         <TextBlock Grid.Column="1" Text="{Binding Primary.CurrentThroughputText}" FontSize="12"
                                    Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
                     </Grid>
@@ -174,7 +176,7 @@
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" Text="{Binding Secondary.Label}" FontSize="12" FontWeight="SemiBold"/>
+                        <TextBlock Grid.Column="0" Text="{Binding Secondary.Label}" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                         <TextBlock Grid.Column="1" Text="{Binding Secondary.CurrentThroughputText}" FontSize="12"
                                    Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
                     </Grid>
@@ -229,7 +231,7 @@
                                                HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                             <StackPanel VerticalAlignment="Center">
-                                <TextBlock Text="Test Setup" FontSize="22" FontWeight="SemiBold"/>
+                                <TextBlock Text="Test Setup" FontSize="22" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                                 <TextBlock Text="Choose how the test accesses the drive, then your tests and settings, then run."
                                            Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="12" TextWrapping="Wrap"/>
                             </StackPanel>
@@ -260,13 +262,14 @@
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="Clear existing data first" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                        <TextBlock Grid.Column="0" Text="Clear existing data first" VerticalAlignment="Center" TextWrapping="Wrap"
+                                                   Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                                         <ui:ToggleSwitch Grid.Column="1" IsChecked="{Binding ClearExistingData}"/>
                                     </Grid>
                                     <TextBlock Text="On: deletes everything already on the drive so the test can use nearly its full capacity. Off: only writes into current free space and leaves your files alone — but then the test can only ever confirm as much capacity as is currently free, and can't check space your existing files occupy."
                                                Foreground="{DynamicResource TextFillColorTertiaryBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,12"/>
 
-                                    <TextBlock Text="When to remove test files" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                                    <TextBlock Text="When to remove test files" FontWeight="SemiBold" Margin="0,0,0,8" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                                     <StackPanel>
                                         <RadioButton Content="Immediately after the test" GroupName="Cleanup" Margin="0,0,0,4"
                                                      IsChecked="{Binding CleanupPolicy, Converter={StaticResource CleanupDeleteAfterTestConverter}}"/>
@@ -295,14 +298,15 @@
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="Run capacity test" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                    <TextBlock Grid.Column="0" Text="Run capacity test" VerticalAlignment="Center" TextWrapping="Wrap"
+                                               Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                                     <ui:ToggleSwitch Grid.Column="1" IsChecked="{Binding RunCapacityTest}"/>
                                 </Grid>
                                 <TextBlock Text="Writes and reads back unique data across the claimed capacity to prove every address is real, writable storage — this is what catches fake-capacity drives."
                                            Foreground="{DynamicResource TextFillColorTertiaryBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,12"/>
 
                                 <TextBlock Text="Scan Depth" FontWeight="SemiBold" Margin="0,0,0,8"
-                                           IsEnabled="{Binding RunCapacityTest}"/>
+                                           IsEnabled="{Binding RunCapacityTest}" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                                 <StackPanel IsEnabled="{Binding RunCapacityTest}">
                                     <RadioButton Content="Quick — a few hundred sampled blocks, fast" GroupName="ScanDepth" Margin="0,0,0,4"
                                                  IsChecked="{Binding CapacityScanDepth, Converter={StaticResource ScanDepthQuickConverter}}"/>
@@ -324,30 +328,60 @@
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="Run speed test" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="0" Text="Run speed test" VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                                     <ui:ToggleSwitch Grid.Column="1" IsChecked="{Binding RunSpeedTest}"/>
                                 </Grid>
-                                <TextBlock Text="Choose which workload(s) to measure — real-world USB drives are often much slower copying many small files than one big one."
-                                           Foreground="{DynamicResource TextFillColorTertiaryBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,12"/>
+                                <TextBlock Text="Each of the 3 slots below tests a real-world file-size category, with randomized file sizes across its range rather than one repeated size — pick which 3 to run."
+                                           Foreground="{DynamicResource TextFillColorTertiaryBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,14"/>
 
                                 <StackPanel IsEnabled="{Binding RunSpeedTest}">
-                                    <CheckBox IsChecked="{Binding RunLargeFileSpeedTest}" Margin="0,0,0,2">
-                                        <TextBlock Text="Large file (1 MB blocks)" TextWrapping="Wrap"/>
-                                    </CheckBox>
-                                    <TextBlock Text="Simulates copying one big file — the best-case number drives are marketed on."
-                                               Foreground="{DynamicResource TextFillColorTertiaryBrush}" FontSize="11" TextWrapping="Wrap" Margin="24,0,0,10"/>
+                                    <!-- Slot 1 -->
+                                    <Grid Margin="0,0,0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <CheckBox Grid.Column="0" IsChecked="{Binding SpeedTestSlot1Enabled}" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                        <ComboBox Grid.Column="1" ItemsSource="{Binding SpeedTestCategoryOptions}"
+                                                  SelectedValue="{Binding SpeedTestSlot1Category}" SelectedValuePath="Category" DisplayMemberPath="DisplayName"
+                                                  IsEnabled="{Binding SpeedTestSlot1Enabled}"/>
+                                    </Grid>
+                                    <TextBlock Foreground="{DynamicResource TextFillColorTertiaryBrush}" FontSize="11" TextWrapping="Wrap" Margin="34,0,0,12">
+                                        <Run Text="{Binding SpeedTestSlot1Info.WorkloadDescription, Mode=OneWay}"/>
+                                        <Run Text=" — file size " /><Run Text="{Binding SpeedTestSlot1Info.SizeRangeText, Mode=OneWay}"/>
+                                    </TextBlock>
 
-                                    <CheckBox IsChecked="{Binding RunSmallFileSpeedTest}" Margin="0,0,0,2">
-                                        <TextBlock Text="Small file (4 KB blocks)" TextWrapping="Wrap"/>
-                                    </CheckBox>
-                                    <TextBlock Text="Simulates copying many small files — often where cheap controllers and thin caches fall apart, and rarely what's advertised."
-                                               Foreground="{DynamicResource TextFillColorTertiaryBrush}" FontSize="11" TextWrapping="Wrap" Margin="24,0,0,10"/>
+                                    <!-- Slot 2 -->
+                                    <Grid Margin="0,0,0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <CheckBox Grid.Column="0" IsChecked="{Binding SpeedTestSlot2Enabled}" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                        <ComboBox Grid.Column="1" ItemsSource="{Binding SpeedTestCategoryOptions}"
+                                                  SelectedValue="{Binding SpeedTestSlot2Category}" SelectedValuePath="Category" DisplayMemberPath="DisplayName"
+                                                  IsEnabled="{Binding SpeedTestSlot2Enabled}"/>
+                                    </Grid>
+                                    <TextBlock Foreground="{DynamicResource TextFillColorTertiaryBrush}" FontSize="11" TextWrapping="Wrap" Margin="34,0,0,12">
+                                        <Run Text="{Binding SpeedTestSlot2Info.WorkloadDescription, Mode=OneWay}"/>
+                                        <Run Text=" — file size " /><Run Text="{Binding SpeedTestSlot2Info.SizeRangeText, Mode=OneWay}"/>
+                                    </TextBlock>
 
-                                    <CheckBox IsChecked="{Binding RunHugeFileSpeedTest}" Margin="0,0,0,2">
-                                        <TextBlock Text="Huge file (100 MB blocks)" TextWrapping="Wrap"/>
-                                    </CheckBox>
-                                    <TextBlock Text="Simulates copying one very large file (video export, disk image). Off by default — adds real time to the test and needs at least 100 MB of verified capacity."
-                                               Foreground="{DynamicResource TextFillColorTertiaryBrush}" FontSize="11" TextWrapping="Wrap" Margin="24,0,0,0"/>
+                                    <!-- Slot 3 -->
+                                    <Grid Margin="0,0,0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <CheckBox Grid.Column="0" IsChecked="{Binding SpeedTestSlot3Enabled}" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                        <ComboBox Grid.Column="1" ItemsSource="{Binding SpeedTestCategoryOptions}"
+                                                  SelectedValue="{Binding SpeedTestSlot3Category}" SelectedValuePath="Category" DisplayMemberPath="DisplayName"
+                                                  IsEnabled="{Binding SpeedTestSlot3Enabled}"/>
+                                    </Grid>
+                                    <TextBlock Foreground="{DynamicResource TextFillColorTertiaryBrush}" FontSize="11" TextWrapping="Wrap" Margin="34,0,0,0">
+                                        <Run Text="{Binding SpeedTestSlot3Info.WorkloadDescription, Mode=OneWay}"/>
+                                        <Run Text=" — file size " /><Run Text="{Binding SpeedTestSlot3Info.SizeRangeText, Mode=OneWay}"/>
+                                    </TextBlock>
                                 </StackPanel>
                             </StackPanel>
                         </ui:CardExpander>
@@ -381,7 +415,7 @@
                                                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                 </Border>
                                 <StackPanel VerticalAlignment="Center">
-                                    <TextBlock Text="Run Test" FontSize="22" FontWeight="SemiBold"/>
+                                    <TextBlock Text="Run Test" FontSize="22" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                                     <TextBlock Text="Start the test and watch progress live." FontSize="12"
                                                Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
                                 </StackPanel>
@@ -407,11 +441,9 @@
                                     </ui:Button>
                                     <ui:ToggleSwitch IsChecked="{Binding AutoAdvanceTests}"
                                                       OnContent="Auto-Advance" OffContent="Auto-Advance"
-                                                      VerticalAlignment="Center"/>
+                                                      VerticalAlignment="Center"
+                                                      ToolTip="On: tests run straight through. Off: the run pauses after each test until you click &quot;Run Next Test&quot;."/>
                                 </StackPanel>
-                                <TextBlock Text="Off: the run pauses after each test finishes until you click &quot;Run Next Test&quot; — useful for narrating results one at a time while recording."
-                                           FontSize="11" TextWrapping="Wrap" MaxWidth="600" HorizontalAlignment="Left"
-                                           Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,0,0,8"/>
                                 <TextBlock Text="{Binding ProgressText}"
                                            Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
                             </StackPanel>
@@ -422,7 +454,8 @@
                                 <StackPanel Orientation="Horizontal">
                                     <ui:SymbolIcon Symbol="Play24" Foreground="#00A6FB" Margin="0,0,10,0" VerticalAlignment="Center"/>
                                     <TextBlock Text="Test complete — click &quot;Run Next Test&quot; when you're ready to continue."
-                                               FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                               FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap"
+                                               Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                                 </StackPanel>
                             </Border>
 

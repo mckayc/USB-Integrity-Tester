@@ -12,78 +12,79 @@ public sealed record SpeedTestResult
 /// <summary>
 /// Measures sustained throughput long enough to see past SLC-cache burst speeds falling off a
 /// cliff once the cache is exhausted — a short test only measures the cache, not the drive.
+/// Simulates a category's real file-size range by picking a new random size (sector-aligned) each
+/// time the "current file" completes, physically writing/reading it in fixed-size chunks so even a
+/// multi-gigabyte simulated file still produces plenty of throughput samples.
 /// </summary>
 public sealed class SpeedTester
 {
-    // Sampling used to trigger purely on a fixed block count, which works fine for 1 MiB/4 KiB
-    // blocks but breaks down for the 100 MiB "huge file" workload: 8 blocks there is 800 MB, which
-    // at typical USB speeds takes longer than the whole sustained-test duration — so at most one
-    // sample (sometimes zero) ever fired, leaving nothing for a trend line to draw. A window now
-    // closes on whichever comes first: enough blocks, or enough elapsed time.
-    private const int SampleWindowBlocks = 8;
+    private const int IoChunkBytes = 4 * 1024 * 1024;
     private static readonly TimeSpan SampleWindowInterval = TimeSpan.FromMilliseconds(250);
 
-    public async Task<SpeedTestResult> MeasureWriteSpeedAsync(
-        RawDiskAccessor accessor, ulong startOffset, ulong regionSizeBytes, int blockSize,
+    public Task<SpeedTestResult> MeasureWriteSpeedAsync(
+        RawDiskAccessor accessor, ulong startOffset, ulong regionSizeBytes, long minFileSizeBytes, long maxFileSizeBytes,
         TimeSpan duration, TestPhase phase, IProgress<TestProgress>? progress, CancellationToken cancellationToken)
     {
-        var buffer = new byte[blockSize];
-        CapacityVerifier.FillDeterministicBlock(buffer, seed: 0xA5A5A5A5UL, blockOffset: 0);
+        var chunkBuffer = new byte[IoChunkBytes];
+        CapacityVerifier.FillDeterministicBlock(chunkBuffer, seed: 0xA5A5A5A5UL, blockOffset: 0);
 
-        return await RunAsync(
-            phase, blockSize, duration, progress, cancellationToken,
-            (offset) =>
-            {
-                accessor.WriteBlock(offset, buffer, blockSize);
-            },
-            startOffset, regionSizeBytes);
+        return RunAsync(phase, duration, progress, cancellationToken,
+            (offset, length) => accessor.WriteBlock(offset, chunkBuffer, length),
+            startOffset, regionSizeBytes, minFileSizeBytes, maxFileSizeBytes);
     }
 
-    public async Task<SpeedTestResult> MeasureReadSpeedAsync(
-        RawDiskAccessor accessor, ulong startOffset, ulong regionSizeBytes, int blockSize,
+    public Task<SpeedTestResult> MeasureReadSpeedAsync(
+        RawDiskAccessor accessor, ulong startOffset, ulong regionSizeBytes, long minFileSizeBytes, long maxFileSizeBytes,
         TimeSpan duration, TestPhase phase, IProgress<TestProgress>? progress, CancellationToken cancellationToken)
     {
-        var buffer = new byte[blockSize];
+        var chunkBuffer = new byte[IoChunkBytes];
 
-        return await RunAsync(
-            phase, blockSize, duration, progress, cancellationToken,
-            (offset) =>
-            {
-                accessor.ReadBlock(offset, buffer, blockSize);
-            },
-            startOffset, regionSizeBytes);
+        return RunAsync(phase, duration, progress, cancellationToken,
+            (offset, length) => accessor.ReadBlock(offset, chunkBuffer, length),
+            startOffset, regionSizeBytes, minFileSizeBytes, maxFileSizeBytes);
     }
 
     private static Task<SpeedTestResult> RunAsync(
-        TestPhase phase, int blockSize, TimeSpan duration, IProgress<TestProgress>? progress,
-        CancellationToken cancellationToken, Action<ulong> performBlockIo, ulong startOffset, ulong regionSizeBytes)
+        TestPhase phase, TimeSpan duration, IProgress<TestProgress>? progress, CancellationToken cancellationToken,
+        Action<ulong, int> performChunkIo, ulong startOffset, ulong regionSizeBytes, long minFileSizeBytes, long maxFileSizeBytes)
     {
         return Task.Run(() =>
         {
+            var rng = Random.Shared;
             var stopwatch = Stopwatch.StartNew();
-            var samples = new List<double>();
             var windowStopwatch = Stopwatch.StartNew();
+            var samples = new List<double>();
             var offset = startOffset;
             var regionEnd = startOffset + regionSizeBytes;
-            ulong totalBytes = 0;
-            var blocksInWindow = 0;
+            long bytesInWindow = 0;
             double peak = 0;
+
+            long currentFileSize = 0;
+            long bytesInCurrentFile = 0;
 
             while (stopwatch.Elapsed < duration)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                performBlockIo(offset);
-                totalBytes += (ulong)blockSize;
-                blocksInWindow++;
+                if (bytesInCurrentFile >= currentFileSize)
+                {
+                    currentFileSize = FileSizeRandomizer.NextAlignedSize(rng, minFileSizeBytes, maxFileSizeBytes);
+                    bytesInCurrentFile = 0;
+                }
 
-                offset += (ulong)blockSize;
-                if (offset + (ulong)blockSize > regionEnd) offset = startOffset; // wrap within the test region
+                var chunkLength = (int)Math.Min(IoChunkBytes, currentFileSize - bytesInCurrentFile);
+                if (offset + (ulong)chunkLength > regionEnd) offset = startOffset; // wrap within the test region
 
-                if (blocksInWindow >= SampleWindowBlocks || windowStopwatch.Elapsed >= SampleWindowInterval)
+                performChunkIo(offset, chunkLength);
+
+                offset += (ulong)chunkLength;
+                bytesInCurrentFile += chunkLength;
+                bytesInWindow += chunkLength;
+
+                if (windowStopwatch.Elapsed >= SampleWindowInterval)
                 {
                     var windowSeconds = windowStopwatch.Elapsed.TotalSeconds;
-                    var windowMegabytes = blocksInWindow * blockSize / 1_000_000.0;
+                    var windowMegabytes = bytesInWindow / 1_000_000.0;
                     var mbPerSec = windowSeconds > 0 ? windowMegabytes / windowSeconds : 0;
                     samples.Add(mbPerSec);
                     peak = Math.Max(peak, mbPerSec);
@@ -97,7 +98,7 @@ public sealed class SpeedTester
                         CurrentThroughputMegabytesPerSecond = mbPerSec,
                     });
 
-                    blocksInWindow = 0;
+                    bytesInWindow = 0;
                     windowStopwatch.Restart();
                 }
             }
@@ -110,5 +111,17 @@ public sealed class SpeedTester
                 SampledMegabytesPerSecond = samples,
             };
         }, cancellationToken);
+    }
+}
+
+/// <summary>Shared by both engines so File Mode and Raw Mode pick sizes the same way.</summary>
+internal static class FileSizeRandomizer
+{
+    /// <summary>A random size in [min, max], rounded down to a multiple of the sector size (unbuffered I/O requires alignment) and never below one sector.</summary>
+    public static long NextAlignedSize(Random rng, long minBytes, long maxBytes, int alignment = UnbufferedFile.SectorSize)
+    {
+        var raw = minBytes >= maxBytes ? minBytes : rng.NextInt64(minBytes, maxBytes + 1);
+        var aligned = raw / alignment * alignment;
+        return Math.Max(aligned, alignment);
     }
 }

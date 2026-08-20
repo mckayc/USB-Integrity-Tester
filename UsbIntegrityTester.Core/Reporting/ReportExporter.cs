@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using UsbIntegrityTester.Core.Testing;
 
 namespace UsbIntegrityTester.Core.Reporting;
 
@@ -23,14 +24,22 @@ public static class ReportExporter
         AppendRow(sb, "Negotiated Link Speed", report.NegotiatedLinkSpeed?.ToString() ?? "Unknown");
         AppendRow(sb, "Verified Good Capacity (bytes)", report.TestResult.Capacity?.VerifiedGoodBytes.ToString(CultureInfo.InvariantCulture) ?? "");
         AppendRow(sb, "Blocks Failed", report.TestResult.Capacity?.BlocksFailed.ToString(CultureInfo.InvariantCulture) ?? "");
-        AppendRow(sb, "Average Write Speed, Large File (MB/s)", report.TestResult.Write?.AverageMegabytesPerSecond.ToString("F1", CultureInfo.InvariantCulture) ?? "");
-        AppendRow(sb, "Average Read Speed, Large File (MB/s)", report.TestResult.Read?.AverageMegabytesPerSecond.ToString("F1", CultureInfo.InvariantCulture) ?? "");
-        AppendRow(sb, "Average Write Speed, Small File (MB/s)", report.TestResult.SmallFileWrite?.AverageMegabytesPerSecond.ToString("F1", CultureInfo.InvariantCulture) ?? "");
-        AppendRow(sb, "Average Read Speed, Small File (MB/s)", report.TestResult.SmallFileRead?.AverageMegabytesPerSecond.ToString("F1", CultureInfo.InvariantCulture) ?? "");
+        AppendSlot(sb, report.TestResult.Slot1);
+        AppendSlot(sb, report.TestResult.Slot2);
+        AppendSlot(sb, report.TestResult.Slot3);
+
         AppendRow(sb, "Verdict", report.Verdict.Verdict.ToString());
         AppendRow(sb, "Explanation", report.Verdict.Explanation);
 
         File.WriteAllText(filePath, sb.ToString());
+    }
+
+    private static void AppendSlot(StringBuilder sb, SpeedTestSlotResult? slot)
+    {
+        if (slot is null) return;
+        var name = SpeedTestCategoryCatalog.Get(slot.Category).DisplayName;
+        AppendRow(sb, $"Average Write Speed, {name} (MB/s)", slot.Write.AverageMegabytesPerSecond.ToString("F1", CultureInfo.InvariantCulture));
+        AppendRow(sb, $"Average Read Speed, {name} (MB/s)", slot.Read.AverageMegabytesPerSecond.ToString("F1", CultureInfo.InvariantCulture));
     }
 
     private static void AppendRow(StringBuilder sb, string field, string value)

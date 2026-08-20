@@ -38,7 +38,7 @@ public static class FraudDetector
         ulong claimedCapacityBytes, double? claimedReadSpeedMegabytesPerSecond,
         double? claimedWriteSpeedMegabytesPerSecond, TestResult result)
     {
-        if (result.Capacity is null && result.Write is null && result.Read is null)
+        if (result.Capacity is null && result.Slot1 is null && result.Slot2 is null && result.Slot3 is null)
         {
             return new VerdictResult { Verdict = DriveVerdict.Failed, Explanation = "No test data was collected." };
         }
@@ -57,14 +57,15 @@ public static class FraudDetector
                 && capacityAccuracy < 1 - CapacityToleranceFraction;
         }
 
-        // Compared against the large-file (sequential) results — that's what packaging claims are
-        // conventionally based on, not the small-file numbers.
-        double? readAccuracy = claimedReadSpeedMegabytesPerSecond is > 0 && result.Read is not null
-            ? result.Read.AverageMegabytesPerSecond / claimedReadSpeedMegabytesPerSecond.Value
+        // Compared against slot 1's results — it defaults to the Standard Benchmark (one large
+        // synthetic sequential file), which is what packaging claims are conventionally based on.
+        // If the user swapped slot 1 for a different category, the comparison follows it there.
+        double? readAccuracy = claimedReadSpeedMegabytesPerSecond is > 0 && result.Slot1 is not null
+            ? result.Slot1.Read.AverageMegabytesPerSecond / claimedReadSpeedMegabytesPerSecond.Value
             : null;
 
-        double? writeAccuracy = claimedWriteSpeedMegabytesPerSecond is > 0 && result.Write is not null
-            ? result.Write.AverageMegabytesPerSecond / claimedWriteSpeedMegabytesPerSecond.Value
+        double? writeAccuracy = claimedWriteSpeedMegabytesPerSecond is > 0 && result.Slot1 is not null
+            ? result.Slot1.Write.AverageMegabytesPerSecond / claimedWriteSpeedMegabytesPerSecond.Value
             : null;
 
         var worstSpeedAccuracy = new[] { readAccuracy, writeAccuracy }.Where(a => a is not null).Select(a => a!.Value)

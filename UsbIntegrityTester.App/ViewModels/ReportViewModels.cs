@@ -1,10 +1,16 @@
-using System.Windows.Media;
-
 namespace UsbIntegrityTester.App.ViewModels;
 
-/// <summary>Plain display data for the Report page's visuals — deliberately not chart-library
-/// series objects, so the page can be built from ordinary WPF bars/sparklines that always match
-/// the app's theme instead of a plotting library's own defaults.</summary>
+/// <summary>Plain display data for the Report page — text and numbers only, no charts/bars, so the
+/// page reads as a set of concrete figures someone can act on rather than something to eyeball.</summary>
+
+/// <summary>Shared MB/s -> "MB/s" or "GB/s" formatting so a fast drive's numbers stay readable
+/// (e.g. "3.88 GB/s" instead of "3,882.7 MB/s") everywhere a throughput number is shown.</summary>
+public static class ThroughputFormat
+{
+    public static string Format(double megabytesPerSecond) => megabytesPerSecond >= 1000
+        ? $"{megabytesPerSecond / 1000:N2} GB/s"
+        : $"{megabytesPerSecond:N1} MB/s";
+}
 
 public sealed record ReportCapacitySummary
 {
@@ -12,68 +18,55 @@ public sealed record ReportCapacitySummary
     public required double VerifiedGb { get; init; }
     public required double MissingGb { get; init; }
     public required double VerifiedFraction { get; init; }
-    public double RemainderFraction => Math.Max(0, 1 - VerifiedFraction);
     public required int BlocksTested { get; init; }
     public required int BlocksFailed { get; init; }
     public required bool HasData { get; init; }
+
+    /// <summary>How thoroughly the capacity was actually checked — reflects the scan depth that was
+    /// used, not just "full capacity wasn't tested," so a Quick scan's result reads as "fast but
+    /// less thorough" rather than as if it came up short.</summary>
+    public required string ScanThoroughnessText { get; init; }
 
     public bool AllBlocksPassed => BlocksFailed == 0;
     public string HeadlineText => HasData ? $"{VerifiedFraction:P0} of claimed capacity verified" : "Capacity test not run";
     public string DetailText => HasData
         ? $"{VerifiedGb:N1} GB verified of {ClaimedGb:N1} GB claimed" + (MissingGb > 0.01 ? $" — {MissingGb:N1} GB missing" : "")
         : string.Empty;
-    public Brush BarBrush => !HasData ? ThroughputPalette.MissingCapacity : (AllBlocksPassed ? ThroughputPalette.Good : ThroughputPalette.Bad);
 
     public static readonly ReportCapacitySummary Empty = new()
     {
         ClaimedGb = 0, VerifiedGb = 0, MissingGb = 0, VerifiedFraction = 0,
-        BlocksTested = 0, BlocksFailed = 0, HasData = false,
+        BlocksTested = 0, BlocksFailed = 0, HasData = false, ScanThoroughnessText = string.Empty,
     };
 }
 
-/// <summary>One row of the "Claimed vs. Measured" bullet-style comparison — a bar sized to the
-/// measured value, colored by whether it met the claim, with the claim and peak burst as text.</summary>
-public sealed record SpeedComparisonRow
+/// <summary>One speed test slot's full report row — the category tested, claimed-vs-measured
+/// numbers for both directions, and a practical "how long would this actually take" translation.</summary>
+public sealed record SpeedTestSlotReportRow
 {
-    public required string Label { get; init; }
-    public required double MeasuredMbps { get; init; }
-    public double? ClaimedMbps { get; init; }
-    public double? PeakMbps { get; init; }
+    public required string CategoryName { get; init; }
+    public required string WorkloadDescription { get; init; }
+    public required string SizeRangeText { get; init; }
 
-    /// <summary>0..1 — how far the bar should fill, relative to the largest measurement in its group so bars in the same section are comparable.</summary>
-    public required double BarFraction { get; init; }
-    public double RemainderFraction => Math.Max(0, 1 - BarFraction);
+    public required double WriteAvgMbps { get; init; }
+    public required double WritePeakMbps { get; init; }
+    public double? ClaimedWriteMbps { get; init; }
 
-    public bool HasClaim => ClaimedMbps is { } c && c > 0;
-    public bool MeetsClaim => !HasClaim || MeasuredMbps >= ClaimedMbps!.Value;
-    public Brush BarBrush => HasClaim ? (MeetsClaim ? ThroughputPalette.Good : ThroughputPalette.Bad) : ThroughputPalette.CapacityNeutral;
+    public required double ReadAvgMbps { get; init; }
+    public required double ReadPeakMbps { get; init; }
+    public double? ClaimedReadMbps { get; init; }
 
-    public string MeasuredText => $"{MeasuredMbps:N1} MB/s";
-    public string DetailText
-    {
-        get
-        {
-            var parts = new List<string>();
-            if (HasClaim) parts.Add($"claimed {ClaimedMbps!.Value:N1}");
-            if (PeakMbps is { } p) parts.Add($"peak {p:N1}");
-            return parts.Count == 0 ? string.Empty : string.Join(" · ", parts) + " MB/s";
-        }
-    }
-}
+    public required string PracticalTimeText { get; init; }
 
-/// <summary>One small trend card in the Report's "burst vs. sustained" section — replaces the old
-/// single crowded multi-line chart with one focused sparkline per test type.</summary>
-public sealed record ReportTrendCard
-{
-    public required string Title { get; init; }
-    public required IReadOnlyList<double> Points { get; init; }
-    public required double AverageMbps { get; init; }
-    public required double PeakMbps { get; init; }
-    public required Brush Stroke { get; init; }
-    public required Brush Fill { get; init; }
+    public string WriteAvgText => ThroughputFormat.Format(WriteAvgMbps);
+    public string WritePeakText => $"peak {ThroughputFormat.Format(WritePeakMbps)}";
+    public string WriteClaimText => ClaimedWriteMbps is { } c and > 0 ? $"claimed {ThroughputFormat.Format(c)}" : string.Empty;
+    public bool WriteMeetsClaim => ClaimedWriteMbps is not { } c || c <= 0 || WriteAvgMbps >= c;
 
-    public string AverageText => $"avg {AverageMbps:N1} MB/s";
-    public string PeakText => $"peak {PeakMbps:N1} MB/s";
+    public string ReadAvgText => ThroughputFormat.Format(ReadAvgMbps);
+    public string ReadPeakText => $"peak {ThroughputFormat.Format(ReadPeakMbps)}";
+    public string ReadClaimText => ClaimedReadMbps is { } c and > 0 ? $"claimed {ThroughputFormat.Format(c)}" : string.Empty;
+    public bool ReadMeetsClaim => ClaimedReadMbps is not { } c || c <= 0 || ReadAvgMbps >= c;
 }
 
 /// <summary>A simple labeled number for the report's expanded stats grid.</summary>

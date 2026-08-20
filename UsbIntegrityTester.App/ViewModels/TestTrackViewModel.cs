@@ -13,7 +13,8 @@ namespace UsbIntegrityTester.App.ViewModels;
 /// </summary>
 public sealed partial class TestTrackViewModel : ObservableObject
 {
-    public string Title { get; }
+    /// <summary>Settable (not just constructor-assigned) because speed test slots' titles change live as the user picks a different category from the Setup tab's dropdown.</summary>
+    [ObservableProperty] private string _title;
 
     /// <summary>The "Write" channel for every track.</summary>
     public TestChannelViewModel Primary { get; }

@@ -16,4 +16,5 @@ public sealed record ReportModel
     public required TestResult TestResult { get; init; }
     public required VerdictResult Verdict { get; init; }
     public required double TestDurationSeconds { get; init; }
+    public required CapacityScanDepth CapacityScanDepth { get; init; }
 }
