@@ -23,9 +23,16 @@ public sealed class TestEngine
     private readonly CapacityVerifier _capacityVerifier = new();
     private readonly SpeedTester _speedTester = new();
 
+    /// <param name="waitForNextTest">
+    /// Called between top-level tests (Capacity, Large, Small, Huge — never between a test's own
+    /// write and read/verify passes) so a caller can pause the run there, e.g. to let a person
+    /// manually advance one test at a time while recording. Never called before the first test
+    /// that actually runs. Pass null to run straight through with no pauses.
+    /// </param>
     public async Task<TestResult> RunAsync(
         RawDiskAccessor accessor, ulong claimedCapacityBytes, TestSettings settings,
-        IProgress<TestProgress>? progress, CancellationToken cancellationToken)
+        IProgress<TestProgress>? progress, CancellationToken cancellationToken,
+        Func<CancellationToken, Task>? waitForNextTest = null)
     {
         CapacityVerificationResult? capacityResult = null;
         SpeedTestResult? writeResult = null;
@@ -35,8 +42,16 @@ public sealed class TestEngine
         SpeedTestResult? hugeFileWriteResult = null;
         SpeedTestResult? hugeFileReadResult = null;
 
+        var hasRunAnyTest = false;
+        async Task GateAsync()
+        {
+            if (hasRunAnyTest && waitForNextTest is not null) await waitForNextTest(cancellationToken);
+            hasRunAnyTest = true;
+        }
+
         if (settings.RunCapacityTest)
         {
+            await GateAsync();
             var offsets = BuildBlockOffsets(claimedCapacityBytes, settings);
             capacityResult = await _capacityVerifier.WriteAndVerifyAsync(
                 accessor, claimedCapacityBytes, settings.BlockSizeBytes, seed: GenerateRunSeed(),
@@ -53,6 +68,8 @@ public sealed class TestEngine
 
             if (settings.RunLargeFileSpeedTest)
             {
+                await GateAsync();
+
                 // Large-file simulation: big sequential blocks — the best-case number drives are marketed on.
                 writeResult = await _speedTester.MeasureWriteSpeedAsync(
                     accessor, 0, regionSize, settings.BlockSizeBytes, settings.SustainedSpeedTestDuration,
@@ -65,6 +82,8 @@ public sealed class TestEngine
 
             if (settings.RunSmallFileSpeedTest)
             {
+                await GateAsync();
+
                 // Small-file simulation: same region, much smaller blocks — this is where cheap
                 // controllers and thin caches usually fall apart, and it's rarely what's advertised.
                 smallFileWriteResult = await _speedTester.MeasureWriteSpeedAsync(
@@ -80,6 +99,8 @@ public sealed class TestEngine
             // (or tiny-because-fake) drive might not have — skip rather than write past real storage.
             if (settings.RunHugeFileSpeedTest && availableBytes >= (ulong)settings.HugeFileBlockSizeBytes)
             {
+                await GateAsync();
+
                 var hugeRegionSize = Math.Min(availableBytes, 256UL * 1024 * 1024);
                 hugeRegionSize = Math.Max(hugeRegionSize, (ulong)settings.HugeFileBlockSizeBytes);
 

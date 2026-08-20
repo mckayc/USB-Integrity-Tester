@@ -46,7 +46,33 @@
                 </ui:NavigationViewItem>
                 <ui:NavigationViewItem Content="Testing" Tag="Testing" Click="NavigationItem_Click">
                     <ui:NavigationViewItem.Icon>
-                        <ui:SymbolIcon Symbol="TopSpeed24"/>
+                        <!-- While a test is running, this icon swaps to a filled "play" glyph in
+                             the accent color and gently pulses — visible from any other tab, not
+                             just when you're already looking at the Testing page. -->
+                        <ui:SymbolIcon x:Name="TestingNavIcon" Symbol="TopSpeed24">
+                            <ui:SymbolIcon.Style>
+                                <Style TargetType="ui:SymbolIcon">
+                                    <Setter Property="Symbol" Value="TopSpeed24"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsTestRunning}" Value="True">
+                                            <Setter Property="Symbol" Value="Play24"/>
+                                            <Setter Property="Filled" Value="True"/>
+                                            <Setter Property="Foreground" Value="#00A6FB"/>
+                                            <DataTrigger.EnterActions>
+                                                <BeginStoryboard Name="TestingNavPulse">
+                                                    <Storyboard RepeatBehavior="Forever" AutoReverse="True">
+                                                        <DoubleAnimation Storyboard.TargetProperty="Opacity" From="1.0" To="0.4" Duration="0:0:0.8"/>
+                                                    </Storyboard>
+                                                </BeginStoryboard>
+                                            </DataTrigger.EnterActions>
+                                            <DataTrigger.ExitActions>
+                                                <StopStoryboard BeginStoryboardName="TestingNavPulse"/>
+                                            </DataTrigger.ExitActions>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ui:SymbolIcon.Style>
+                        </ui:SymbolIcon>
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
                 <ui:NavigationViewItem Content="Report" Tag="Report" Click="NavigationItem_Click">

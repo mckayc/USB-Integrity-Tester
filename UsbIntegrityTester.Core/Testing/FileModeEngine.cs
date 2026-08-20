@@ -15,6 +15,14 @@ public sealed class FileModeEngine
 
     private const int RotatingSpeedTestFileCount = 4;
 
+    /// <summary>Physical I/O granularity for the huge-file workload. Large/Small write or read
+    /// their whole file in one call, which is fine when that call takes milliseconds — but a 100 MB
+    /// huge file can take several seconds at USB speed, so doing it in one call means only a single
+    /// throughput sample for the whole file, and a trend line with almost nothing to draw. Chunking
+    /// it gives ~25 samples per 100 MB file instead of 1, while the file on disk is still one real,
+    /// contiguous 100 MB file — only the physical I/O calls are smaller.</summary>
+    private const int HugeFileIoChunkBytes = 4 * 1024 * 1024;
+
     public static string GetTestFolderPath(string volumeLetter) =>
         Path.Combine(volumeLetter.TrimEnd('\\') + "\\", TestFolderName);
 
@@ -32,9 +40,16 @@ public sealed class FileModeEngine
         }
     }
 
+    /// <param name="waitForNextTest">
+    /// Called between top-level tests (Capacity, Large, Small, Huge — never between a test's own
+    /// write and read passes) so a caller can pause the run there, e.g. to let a person manually
+    /// advance one test at a time while recording. Never called before the first test that
+    /// actually runs. Pass null to run straight through with no pauses.
+    /// </param>
     public async Task<TestResult> RunAsync(
         string volumeLetter, ulong claimedCapacityBytes, TestSettings settings,
-        IProgress<TestProgress>? progress, CancellationToken cancellationToken)
+        IProgress<TestProgress>? progress, CancellationToken cancellationToken,
+        Func<CancellationToken, Task>? waitForNextTest = null)
     {
         var driveInfo = new System.IO.DriveInfo(volumeLetter);
         var testFolder = GetTestFolderPath(volumeLetter);
@@ -51,9 +66,18 @@ public sealed class FileModeEngine
             : (ulong)(driveInfo.AvailableFreeSpace * 0.95);
         var fullTarget = Math.Min(claimedCapacityBytes, usableBytes);
 
+        var hasRunAnyTest = false;
+        async Task GateAsync()
+        {
+            if (hasRunAnyTest && waitForNextTest is not null) await waitForNextTest(cancellationToken);
+            hasRunAnyTest = true;
+        }
+
         CapacityVerificationResult? capacityResult = null;
         if (settings.RunCapacityTest)
         {
+            await GateAsync();
+
             var targetBytes = settings.CapacityScanDepth switch
             {
                 CapacityScanDepth.Quick => Math.Min(fullTarget, 1_000_000_000UL), // up to 1 GB
@@ -74,20 +98,23 @@ public sealed class FileModeEngine
         {
             if (settings.RunLargeFileSpeedTest)
             {
+                await GateAsync();
                 writeResult = await MeasureWriteSpeedAsync(testFolder, "large", settings.BlockSizeBytes, settings.SustainedSpeedTestDuration, TestPhase.MeasuringLargeFileWriteSpeed, progress, cancellationToken);
                 readResult = await MeasureReadSpeedAsync(testFolder, "large", settings.BlockSizeBytes, settings.SustainedSpeedTestDuration, TestPhase.MeasuringLargeFileReadSpeed, progress, cancellationToken);
             }
 
             if (settings.RunSmallFileSpeedTest)
             {
+                await GateAsync();
                 smallFileWriteResult = await MeasureWriteSpeedAsync(testFolder, "small", settings.SmallFileBlockSizeBytes, settings.SustainedSpeedTestDuration, TestPhase.MeasuringSmallFileWriteSpeed, progress, cancellationToken);
                 smallFileReadResult = await MeasureReadSpeedAsync(testFolder, "small", settings.SmallFileBlockSizeBytes, settings.SustainedSpeedTestDuration, TestPhase.MeasuringSmallFileReadSpeed, progress, cancellationToken);
             }
 
             if (settings.RunHugeFileSpeedTest && fullTarget >= (ulong)settings.HugeFileBlockSizeBytes * RotatingSpeedTestFileCount)
             {
-                hugeFileWriteResult = await MeasureWriteSpeedAsync(testFolder, "huge", settings.HugeFileBlockSizeBytes, settings.SustainedSpeedTestDuration, TestPhase.MeasuringHugeFileWriteSpeed, progress, cancellationToken);
-                hugeFileReadResult = await MeasureReadSpeedAsync(testFolder, "huge", settings.HugeFileBlockSizeBytes, settings.SustainedSpeedTestDuration, TestPhase.MeasuringHugeFileReadSpeed, progress, cancellationToken);
+                await GateAsync();
+                hugeFileWriteResult = await MeasureHugeFileWriteSpeedAsync(testFolder, settings.HugeFileBlockSizeBytes, HugeFileIoChunkBytes, settings.SustainedSpeedTestDuration, TestPhase.MeasuringHugeFileWriteSpeed, progress, cancellationToken);
+                hugeFileReadResult = await MeasureHugeFileReadSpeedAsync(testFolder, settings.HugeFileBlockSizeBytes, HugeFileIoChunkBytes, settings.SustainedSpeedTestDuration, TestPhase.MeasuringHugeFileReadSpeed, progress, cancellationToken);
             }
         }
 
@@ -149,7 +176,7 @@ public sealed class FileModeEngine
 
             try
             {
-                File.WriteAllBytes(path, buffer);
+                UnbufferedFile.WriteAllBytes(path, buffer, blockSize);
             }
             catch (IOException)
             {
@@ -175,6 +202,7 @@ public sealed class FileModeEngine
             : 0;
 
         var expected = new byte[blockSize];
+        var actual = new byte[blockSize];
         var blocksFailed = 0;
         ulong verifiedGoodBytes = 0;
         var sawFailure = false;
@@ -186,17 +214,18 @@ public sealed class FileModeEngine
             cancellationToken.ThrowIfCancellationRequested();
             CapacityVerifier.FillDeterministicBlock(expected, seed, (ulong)i);
 
-            byte[] actual;
+            bool readOk;
             try
             {
-                actual = File.ReadAllBytes(writtenPaths[i]);
+                UnbufferedFile.ReadAllBytes(writtenPaths[i], actual, blockSize);
+                readOk = true;
             }
             catch (IOException)
             {
-                actual = Array.Empty<byte>();
+                readOk = false;
             }
 
-            if (actual.Length == blockSize && actual.AsSpan().SequenceEqual(expected))
+            if (readOk && actual.AsSpan().SequenceEqual(expected))
             {
                 if (!sawFailure) verifiedGoodBytes = (ulong)(i + 1) * (ulong)blockSize;
             }
@@ -242,7 +271,7 @@ public sealed class FileModeEngine
         return RunTimedFileLoop(duration, phase, progress, cancellationToken, fileIndex =>
         {
             var path = Path.Combine(folder, $"{prefix}_speedtest_{fileIndex % RotatingSpeedTestFileCount}.bin");
-            File.WriteAllBytes(path, buffer);
+            UnbufferedFile.WriteAllBytes(path, buffer, blockSize);
         }, blockSize);
     }, cancellationToken);
 
@@ -257,14 +286,101 @@ public sealed class FileModeEngine
         for (var i = 0; i < RotatingSpeedTestFileCount; i++)
         {
             var path = Path.Combine(folder, $"{prefix}_speedtest_{i}.bin");
-            if (!File.Exists(path)) File.WriteAllBytes(path, buffer);
+            if (!File.Exists(path)) UnbufferedFile.WriteAllBytes(path, buffer, blockSize);
         }
 
+        // Only 4 files rotate for the whole test — with ordinary buffered I/O, Windows' file
+        // cache would hold onto them after this first pass and every subsequent "read" would
+        // measure RAM bandwidth, not the drive. UnbufferedFile forces every read to the device.
         return RunTimedFileLoop(duration, phase, progress, cancellationToken, fileIndex =>
         {
             var path = Path.Combine(folder, $"{prefix}_speedtest_{fileIndex % RotatingSpeedTestFileCount}.bin");
-            _ = File.ReadAllBytes(path);
+            UnbufferedFile.ReadAllBytes(path, buffer, blockSize);
         }, blockSize);
+    }, cancellationToken);
+
+    /// <summary>Writes the huge-file workload in <see cref="HugeFileIoChunkBytes"/>-sized chunks
+    /// rather than one call per whole 100 MB file, so the trend line actually has something to
+    /// draw. Cycles through the same rotating file set as the other workloads.</summary>
+    private static Task<SpeedTestResult> MeasureHugeFileWriteSpeedAsync(
+        string folder, int fileSizeBytes, int chunkSizeBytes, TimeSpan duration, TestPhase phase,
+        IProgress<TestProgress>? progress, CancellationToken cancellationToken) => Task.Run(() =>
+    {
+        var chunkBuffer = new byte[chunkSizeBytes];
+        CapacityVerifier.FillDeterministicBlock(chunkBuffer, seed: 0xA5A5A5A5UL, blockOffset: 0);
+
+        UnbufferedFile.ChunkedWriter? writer = null;
+        var bytesInCurrentFile = 0;
+        var fileIndex = 0;
+
+        try
+        {
+            return RunTimedFileLoop(duration, phase, progress, cancellationToken, _ =>
+            {
+                if (writer is null || bytesInCurrentFile >= fileSizeBytes)
+                {
+                    writer?.Dispose();
+                    var path = Path.Combine(folder, $"huge_speedtest_{fileIndex % RotatingSpeedTestFileCount}.bin");
+                    writer = new UnbufferedFile.ChunkedWriter(path);
+                    bytesInCurrentFile = 0;
+                    fileIndex++;
+                }
+
+                writer.WriteChunk(chunkBuffer, chunkSizeBytes);
+                bytesInCurrentFile += chunkSizeBytes;
+            }, chunkSizeBytes);
+        }
+        finally
+        {
+            writer?.Dispose();
+        }
+    }, cancellationToken);
+
+    /// <summary>The read counterpart to <see cref="MeasureHugeFileWriteSpeedAsync"/>.</summary>
+    private static Task<SpeedTestResult> MeasureHugeFileReadSpeedAsync(
+        string folder, int fileSizeBytes, int chunkSizeBytes, TimeSpan duration, TestPhase phase,
+        IProgress<TestProgress>? progress, CancellationToken cancellationToken) => Task.Run(() =>
+    {
+        var seedBuffer = new byte[chunkSizeBytes];
+        CapacityVerifier.FillDeterministicBlock(seedBuffer, seed: 0xA5A5A5A5UL, blockOffset: 0);
+
+        // Read needs the rotating files to already exist, fully sized — write them once, untimed, first.
+        for (var i = 0; i < RotatingSpeedTestFileCount; i++)
+        {
+            var path = Path.Combine(folder, $"huge_speedtest_{i}.bin");
+            if (File.Exists(path) && new FileInfo(path).Length == fileSizeBytes) continue;
+
+            using var seedWriter = new UnbufferedFile.ChunkedWriter(path);
+            for (var written = 0; written < fileSizeBytes; written += chunkSizeBytes)
+                seedWriter.WriteChunk(seedBuffer, chunkSizeBytes);
+        }
+
+        var chunkBuffer = new byte[chunkSizeBytes];
+        UnbufferedFile.ChunkedReader? reader = null;
+        var bytesInCurrentFile = 0;
+        var fileIndex = 0;
+
+        try
+        {
+            return RunTimedFileLoop(duration, phase, progress, cancellationToken, _ =>
+            {
+                if (reader is null || bytesInCurrentFile >= fileSizeBytes)
+                {
+                    reader?.Dispose();
+                    var path = Path.Combine(folder, $"huge_speedtest_{fileIndex % RotatingSpeedTestFileCount}.bin");
+                    reader = new UnbufferedFile.ChunkedReader(path);
+                    bytesInCurrentFile = 0;
+                    fileIndex++;
+                }
+
+                reader.ReadChunk(chunkBuffer, chunkSizeBytes);
+                bytesInCurrentFile += chunkSizeBytes;
+            }, chunkSizeBytes);
+        }
+        finally
+        {
+            reader?.Dispose();
+        }
     }, cancellationToken);
 
     private static SpeedTestResult RunTimedFileLoop(
@@ -272,6 +388,7 @@ public sealed class FileModeEngine
         CancellationToken cancellationToken, Action<int> performFileIo, int blockSize)
     {
         const int SampleWindowFiles = 3;
+        var sampleWindowInterval = TimeSpan.FromMilliseconds(250);
 
         var stopwatch = Stopwatch.StartNew();
         var windowStopwatch = Stopwatch.StartNew();
@@ -288,7 +405,7 @@ public sealed class FileModeEngine
             fileIndex++;
             filesInWindow++;
 
-            if (filesInWindow >= SampleWindowFiles)
+            if (filesInWindow >= SampleWindowFiles || windowStopwatch.Elapsed >= sampleWindowInterval)
             {
                 var windowSeconds = windowStopwatch.Elapsed.TotalSeconds;
                 var windowMegabytes = filesInWindow * blockSize / 1_000_000.0;

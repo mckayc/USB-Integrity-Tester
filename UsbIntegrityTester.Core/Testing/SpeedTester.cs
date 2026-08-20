@@ -15,7 +15,13 @@ public sealed record SpeedTestResult
 /// </summary>
 public sealed class SpeedTester
 {
+    // Sampling used to trigger purely on a fixed block count, which works fine for 1 MiB/4 KiB
+    // blocks but breaks down for the 100 MiB "huge file" workload: 8 blocks there is 800 MB, which
+    // at typical USB speeds takes longer than the whole sustained-test duration — so at most one
+    // sample (sometimes zero) ever fired, leaving nothing for a trend line to draw. A window now
+    // closes on whichever comes first: enough blocks, or enough elapsed time.
     private const int SampleWindowBlocks = 8;
+    private static readonly TimeSpan SampleWindowInterval = TimeSpan.FromMilliseconds(250);
 
     public async Task<SpeedTestResult> MeasureWriteSpeedAsync(
         RawDiskAccessor accessor, ulong startOffset, ulong regionSizeBytes, int blockSize,
@@ -74,7 +80,7 @@ public sealed class SpeedTester
                 offset += (ulong)blockSize;
                 if (offset + (ulong)blockSize > regionEnd) offset = startOffset; // wrap within the test region
 
-                if (blocksInWindow >= SampleWindowBlocks)
+                if (blocksInWindow >= SampleWindowBlocks || windowStopwatch.Elapsed >= SampleWindowInterval)
                 {
                     var windowSeconds = windowStopwatch.Elapsed.TotalSeconds;
                     var windowMegabytes = blocksInWindow * blockSize / 1_000_000.0;

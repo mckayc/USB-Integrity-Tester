@@ -6,9 +6,53 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:UsbIntegrityTester.App.ViewModels"
              xmlns:controls="clr-namespace:UsbIntegrityTester.App.Controls"
+             xmlns:views="clr-namespace:UsbIntegrityTester.App.Views"
              mc:Ignorable="d" d:DesignWidth="1000">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
+
+        <!-- Shared chrome for every Run Test card: highlights with an accent border and a subtle
+             background tint while its test is actually running, so the active card is obvious
+             even now that all four are the same size. -->
+        <Style x:Key="TrackCardBorderStyle" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Padding" Value="16"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsRunning}" Value="True">
+                    <Setter Property="BorderBrush" Value="#00A6FB"/>
+                    <Setter Property="BorderThickness" Value="2"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- A small pulsing dot next to the title, visible only while this card's test is running
+             — a second, harder-to-miss cue alongside the accent border for "this one is live now". -->
+        <Style x:Key="LiveDotStyle" TargetType="Ellipse">
+            <Setter Property="Width" Value="8"/>
+            <Setter Property="Height" Value="8"/>
+            <Setter Property="Margin" Value="0,0,8,0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Fill" Value="#00A6FB"/>
+            <Setter Property="Visibility" Value="Collapsed"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsRunning}" Value="True">
+                    <Setter Property="Visibility" Value="Visible"/>
+                    <DataTrigger.EnterActions>
+                        <BeginStoryboard Name="LiveDotPulse">
+                            <Storyboard RepeatBehavior="Forever" AutoReverse="True">
+                                <DoubleAnimation Storyboard.TargetProperty="Opacity" From="1.0" To="0.25" Duration="0:0:0.7"/>
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </DataTrigger.EnterActions>
+                    <DataTrigger.ExitActions>
+                        <StopStoryboard BeginStoryboardName="LiveDotPulse"/>
+                    </DataTrigger.ExitActions>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
 
         <!-- One direction (Write, or Read/Verify) of a speed track: number + trend line. Used
              twice per speed card, side by side, so write and read never share one line. -->
@@ -23,8 +67,12 @@
 
                 <TextBlock Grid.Row="0" Text="{Binding Label}" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,2"
                            Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
-                <TextBlock Grid.Row="1" Text="{Binding CurrentThroughputText}" FontSize="22" FontWeight="Bold"
-                           Foreground="{Binding ThroughputBrush}"/>
+                <StackPanel Grid.Row="1" Orientation="Horizontal">
+                    <TextBlock Text="{Binding CurrentThroughputText}" FontSize="22" FontWeight="Bold"
+                               Foreground="{Binding ThroughputBrush}"/>
+                    <TextBlock Text="{Binding ClaimStatusGlyph}" FontSize="14" FontWeight="Bold" Margin="6,0,0,0"
+                               VerticalAlignment="Center" Foreground="{Binding ClaimStatusBrush}"/>
+                </StackPanel>
                 <StackPanel Grid.Row="2" Margin="0,2,0,6">
                     <TextBlock Text="{Binding AverageThroughputText}" FontSize="10"
                                Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
@@ -37,11 +85,10 @@
         </DataTemplate>
 
         <!-- Large/Small/Huge File cards: overall progress, then Write and Read side by side, each
-             with its own number and trend line. -->
-        <DataTemplate DataType="{x:Type vm:TestTrackViewModel}">
-            <Border Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
-                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"
-                    CornerRadius="8" Padding="16"
+             with its own number and trend line. Every track uses this same full layout now,
+             regardless of whether it's the one currently running — only their order changes. -->
+        <DataTemplate x:Key="SpeedCardTemplate" DataType="{x:Type vm:TestTrackViewModel}">
+            <Border Style="{StaticResource TrackCardBorderStyle}"
                     Opacity="{Binding IsSelected, Converter={StaticResource BoolToCardOpacityConverter}}">
                 <Grid>
                     <Grid.RowDefinitions>
@@ -52,11 +99,13 @@
 
                     <Grid Grid.Row="0" Margin="0,0,0,10">
                         <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" Text="{Binding Title}" FontWeight="SemiBold" FontSize="14" TextWrapping="Wrap"/>
-                        <TextBlock Grid.Column="1" Text="{Binding StatusText}" FontSize="12" Margin="8,0,0,0"
+                        <Ellipse Grid.Column="0" Style="{StaticResource LiveDotStyle}"/>
+                        <TextBlock Grid.Column="1" Text="{Binding Title}" FontWeight="SemiBold" FontSize="14" TextWrapping="Wrap"/>
+                        <TextBlock Grid.Column="2" Text="{Binding StatusText}" FontSize="12" Margin="8,0,0,0"
                                    Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
                     </Grid>
 
@@ -80,18 +129,18 @@
              capacity has actually been written and verified so far — a fake-capacity drive stalls
              partway across these bars instead of just showing a slow number. -->
         <DataTemplate x:Key="CapacityCardTemplate" DataType="{x:Type vm:TestTrackViewModel}">
-            <Border Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
-                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"
-                    CornerRadius="8" Padding="16"
+            <Border Style="{StaticResource TrackCardBorderStyle}"
                     Opacity="{Binding IsSelected, Converter={StaticResource BoolToCardOpacityConverter}}">
                 <StackPanel>
                     <Grid Margin="0,0,0,10">
                         <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" Text="{Binding Title}" FontWeight="SemiBold" FontSize="14" TextWrapping="Wrap"/>
-                        <TextBlock Grid.Column="1" Text="{Binding StatusText}" FontSize="12" Margin="8,0,0,0"
+                        <Ellipse Grid.Column="0" Style="{StaticResource LiveDotStyle}"/>
+                        <TextBlock Grid.Column="1" Text="{Binding Title}" FontWeight="SemiBold" FontSize="14" TextWrapping="Wrap"/>
+                        <TextBlock Grid.Column="2" Text="{Binding StatusText}" FontSize="12" Margin="8,0,0,0"
                                    Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
                     </Grid>
 
@@ -146,15 +195,45 @@
                 </StackPanel>
             </Border>
         </DataTemplate>
+
+        <views:TestTrackHeroTemplateSelector x:Key="TrackTemplateSelector"
+                                              CapacityTemplate="{StaticResource CapacityCardTemplate}"
+                                              SpeedTemplate="{StaticResource SpeedCardTemplate}"/>
     </UserControl.Resources>
     <Grid>
-        <TabControl>
-            <TabItem Header="Test Setup">
+        <TabControl Background="Transparent">
+            <TabControl.Resources>
+                <!-- Bigger, icon-carrying tab headers instead of the default plain-text ones —
+                     each tab keeps a consistent identity color across its header icon and its
+                     page's own title badge below, so Setup and Run read as visually different
+                     places, not just different labels on the same look. -->
+                <Style TargetType="TabItem">
+                    <Setter Property="Padding" Value="16,10"/>
+                    <Setter Property="FontSize" Value="14"/>
+                </Style>
+            </TabControl.Resources>
+
+            <TabItem>
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="Settings24" FontSize="17" Margin="0,0,8,0"/>
+                        <TextBlock Text="Test Setup" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </TabItem.Header>
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="24" MaxWidth="640" HorizontalAlignment="Left">
-                        <TextBlock Text="Testing" FontSize="24" FontWeight="SemiBold" Margin="0,0,0,4"/>
-                        <TextBlock Text="Choose how the test accesses the drive, then your tests and settings, then run."
-                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,20" TextWrapping="Wrap"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
+                            <Border Background="{DynamicResource ControlFillColorDefaultBrush}" CornerRadius="8"
+                                    Width="40" Height="40" Margin="0,0,12,0">
+                                <ui:SymbolIcon Symbol="Settings24" FontSize="20"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="Test Setup" FontSize="22" FontWeight="SemiBold"/>
+                                <TextBlock Text="Choose how the test accesses the drive, then your tests and settings, then run."
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="12" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </StackPanel>
 
                         <ui:CardExpander Header="Test Mode" IsExpanded="True" Margin="0,0,0,12">
                             <ui:CardExpander.Icon>
@@ -279,35 +358,90 @@
                 </ScrollViewer>
             </TabItem>
 
-            <TabItem Header="Run Test">
+            <TabItem>
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="Play24" FontSize="17" Margin="0,0,8,0" Foreground="#00A6FB"/>
+                        <TextBlock Text="Run Test" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </TabItem.Header>
                 <Grid>
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <Grid Margin="24">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
                             <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,20">
-                                <ui:Button Content="Start Test" Command="{Binding StartTestCommand}" Appearance="Primary"
-                                           IsEnabled="{Binding IsTestRunning, Converter={StaticResource InverseBoolConverter}}"
-                                           Margin="0,0,8,0" Padding="20,10" FontSize="15">
-                                    <ui:Button.Icon>
-                                        <ui:SymbolIcon Symbol="Play24"/>
-                                    </ui:Button.Icon>
-                                </ui:Button>
-                                <ui:Button Content="Cancel" Command="{Binding CancelTestCommand}"
-                                           IsEnabled="{Binding IsTestRunning}" Padding="20,10" FontSize="15"/>
-                                <TextBlock Text="{Binding ProgressText}" VerticalAlignment="Center" Margin="16,0,0,0"
+                                <Border Background="#1A00A6FB" CornerRadius="8" Width="40" Height="40" Margin="0,0,12,0">
+                                    <ui:SymbolIcon Symbol="Play24" Foreground="#00A6FB" FontSize="20"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="Run Test" FontSize="22" FontWeight="SemiBold"/>
+                                    <TextBlock Text="Start the test and watch progress live." FontSize="12"
+                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                </StackPanel>
+                            </StackPanel>
+
+                            <StackPanel Grid.Row="1" Margin="0,0,0,16">
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                    <ui:Button Content="Start Test" Command="{Binding StartTestCommand}" Appearance="Primary"
+                                               IsEnabled="{Binding IsTestRunning, Converter={StaticResource InverseBoolConverter}}"
+                                               Margin="0,0,8,0" Padding="20,10" FontSize="15">
+                                        <ui:Button.Icon>
+                                            <ui:SymbolIcon Symbol="Play24"/>
+                                        </ui:Button.Icon>
+                                    </ui:Button>
+                                    <ui:Button Content="Cancel" Command="{Binding CancelTestCommand}"
+                                               IsEnabled="{Binding IsTestRunning}" Padding="20,10" FontSize="15" Margin="0,0,8,0"/>
+                                    <ui:Button Content="Run Next Test" Command="{Binding RunNextTestCommand}" Appearance="Primary"
+                                               Visibility="{Binding IsWaitingForNextTest, Converter={StaticResource BoolToVisibility}}"
+                                               Padding="20,10" FontSize="15" Margin="0,0,16,0">
+                                        <ui:Button.Icon>
+                                            <ui:SymbolIcon Symbol="Play24"/>
+                                        </ui:Button.Icon>
+                                    </ui:Button>
+                                    <ui:ToggleSwitch IsChecked="{Binding AutoAdvanceTests}"
+                                                      OnContent="Auto-Advance" OffContent="Auto-Advance"
+                                                      VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <TextBlock Text="Off: the run pauses after each test finishes until you click &quot;Run Next Test&quot; — useful for narrating results one at a time while recording."
+                                           FontSize="11" TextWrapping="Wrap" MaxWidth="600" HorizontalAlignment="Left"
+                                           Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,0,0,8"/>
+                                <TextBlock Text="{Binding ProgressText}"
                                            Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
                             </StackPanel>
 
-                            <UniformGrid Grid.Row="1" Columns="2" Rows="2">
-                                <ContentControl Content="{Binding CapacityTrack}" ContentTemplate="{StaticResource CapacityCardTemplate}" Margin="0,0,12,12"/>
-                                <ContentControl Content="{Binding LargeFileTrack}" Margin="0,0,0,12"/>
-                                <ContentControl Content="{Binding SmallFileTrack}" Margin="0,0,12,0"/>
-                                <ContentControl Content="{Binding HugeFileTrack}"/>
-                            </UniformGrid>
+                            <Border Grid.Row="2" Background="#1A00A6FB" BorderBrush="#00A6FB" BorderThickness="1"
+                                    CornerRadius="6" Padding="12,10" Margin="0,0,0,16"
+                                    Visibility="{Binding IsWaitingForNextTest, Converter={StaticResource BoolToVisibility}}">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Play24" Foreground="#00A6FB" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="Test complete — click &quot;Run Next Test&quot; when you're ready to continue."
+                                               FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Every card at full size and width — whichever test is currently
+                                 running simply sorts to the top, so nothing ever shrinks down to
+                                 where its trend lines don't fit. -->
+                            <ItemsControl Grid.Row="3" ItemsSource="{Binding AllTracks}"
+                                          ItemTemplateSelector="{StaticResource TrackTemplateSelector}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemContainerStyle>
+                                    <Style TargetType="ContentPresenter">
+                                        <Setter Property="Margin" Value="0,0,0,12"/>
+                                    </Style>
+                                </ItemsControl.ItemContainerStyle>
+                            </ItemsControl>
                         </Grid>
                     </ScrollViewer>
 

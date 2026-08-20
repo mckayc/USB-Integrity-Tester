@@ -28,8 +28,14 @@ public sealed partial class TestChannelViewModel : ObservableObject
     [ObservableProperty] private string _peakThroughputText = string.Empty;
     [ObservableProperty] private string _averageThroughputText = string.Empty;
     [ObservableProperty] private string _detailText = string.Empty;
+
+    /// <summary>This channel's fixed identity color (write vs. read/verify) — never changes based on performance, so the line's color always tells you which channel it is.</summary>
     [ObservableProperty] private Brush _throughputBrush = Brushes.Gray;
     [ObservableProperty] private Brush _throughputFillBrush = Brushes.Transparent;
+
+    /// <summary>A small "meeting claim / falling short" badge shown next to the number — kept separate from ThroughputBrush so claim status doesn't erase the write/read color distinction.</summary>
+    [ObservableProperty] private string _claimStatusGlyph = string.Empty;
+    [ObservableProperty] private Brush _claimStatusBrush = Brushes.Transparent;
 
     public ObservableCollection<double> LivePoints { get; } = new();
 
@@ -53,6 +59,8 @@ public sealed partial class TestChannelViewModel : ObservableObject
         DetailText = string.Empty;
         ThroughputBrush = neutralBrush;
         ThroughputFillBrush = neutralFillBrush;
+        ClaimStatusGlyph = string.Empty;
+        ClaimStatusBrush = Brushes.Transparent;
     }
 
     public void ResetSmoothing()

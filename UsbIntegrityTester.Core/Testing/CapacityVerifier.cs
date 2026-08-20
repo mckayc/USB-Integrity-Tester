@@ -31,7 +31,10 @@ public sealed record CapacityVerificationResult
 /// </summary>
 public sealed class CapacityVerifier
 {
+    // See the matching comment in SpeedTester — a window closes on whichever comes first, enough
+    // blocks or enough elapsed time, so a large configured block size can't stall progress reporting.
     private const int SampleWindowBlocks = 8;
+    private static readonly TimeSpan SampleWindowInterval = TimeSpan.FromMilliseconds(250);
 
     public Task<CapacityVerificationResult> WriteAndVerifyAsync(
         RawDiskAccessor accessor,
@@ -61,7 +64,7 @@ public sealed class CapacityVerifier
             blocksInWindow++;
 
             double? currentMbPerSec = null;
-            if (blocksInWindow >= SampleWindowBlocks)
+            if (blocksInWindow >= SampleWindowBlocks || windowStopwatch.Elapsed >= SampleWindowInterval)
             {
                 var windowSeconds = windowStopwatch.Elapsed.TotalSeconds;
                 var windowMegabytes = blocksInWindow * blockSize / 1_000_000.0;
@@ -116,7 +119,7 @@ public sealed class CapacityVerifier
             blocksInWindow++;
 
             double? currentMbPerSec = null;
-            if (blocksInWindow >= SampleWindowBlocks)
+            if (blocksInWindow >= SampleWindowBlocks || windowStopwatch.Elapsed >= SampleWindowInterval)
             {
                 var windowSeconds = windowStopwatch.Elapsed.TotalSeconds;
                 var windowMegabytes = blocksInWindow * blockSize / 1_000_000.0;

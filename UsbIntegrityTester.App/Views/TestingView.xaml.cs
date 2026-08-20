@@ -25,13 +25,13 @@ public partial class TestingView : UserControl
         if (e.PropertyName != nameof(MainViewModel.FakeBlockFlashTrigger)) return;
 
         // A quick red flash the instant a fake/corrupted block is found — the "gotcha" moment.
-        var animation = new DoubleAnimation
+        var flash = new DoubleAnimation
         {
             From = 0.6,
             To = 0,
             Duration = TimeSpan.FromMilliseconds(500),
             EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut },
         };
-        FakeBlockFlashOverlay.BeginAnimation(OpacityProperty, animation);
+        FakeBlockFlashOverlay.BeginAnimation(OpacityProperty, flash);
     }
 }

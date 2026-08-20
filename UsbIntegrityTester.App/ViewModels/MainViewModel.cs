@@ -32,10 +32,11 @@ public partial class MainViewModel : ObservableObject
     // moving average smooths the displayed number so it doesn't jitter between flushes.
     private readonly DispatcherTimer _liveUpdateTimer;
     private Stopwatch? _capacityStopwatch;
+    private double? _capacityEtaSmoothedSeconds;
     private Stopwatch? _overallTestStopwatch;
 
     public TestTrackViewModel CapacityTrack { get; } =
-        new("Capacity Test", "Write", "Verify", ThroughputPalette.CapacityNeutral, ThroughputPalette.CapacityNeutralFill);
+        new("Capacity Test", "Write", "Verify", ThroughputPalette.CapacityNeutral, ThroughputPalette.CapacityNeutralFill, usesCapacityLayout: true);
     public TestTrackViewModel LargeFileTrack { get; } =
         new("Large File (1 MB blocks)", "Write", "Read", ThroughputPalette.LargeFileNeutral, ThroughputPalette.LargeFileNeutralFill);
     public TestTrackViewModel SmallFileTrack { get; } =
@@ -43,7 +44,11 @@ public partial class MainViewModel : ObservableObject
     public TestTrackViewModel HugeFileTrack { get; } =
         new("Huge File (100 MB blocks)", "Write", "Read", ThroughputPalette.HugeFileNeutral, ThroughputPalette.HugeFileNeutralFill);
 
-    private IReadOnlyList<TestTrackViewModel> AllTracks => new[] { CapacityTrack, LargeFileTrack, SmallFileTrack, HugeFileTrack };
+    /// <summary>All four tracks in a fixed order — Capacity, Large, Small, Huge — always. Cards
+    /// used to reorder to put whichever test was running at the top, but that meant the whole
+    /// layout reshuffled every time a test finished, which was disorienting; the accent border and
+    /// pulsing dot on the active card already say "this one's running" without moving anything.</summary>
+    public IReadOnlyList<TestTrackViewModel> AllTracks => new[] { CapacityTrack, LargeFileTrack, SmallFileTrack, HugeFileTrack };
 
     public MainViewModel()
     {
@@ -175,6 +180,40 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _progressText = "Idle.";
     [ObservableProperty] private bool _isTestRunning;
     [ObservableProperty] private string _currentPhaseLabel = "Idle";
+
+    /// <summary>On: tests run straight through, like before. Off: the run pauses after each test
+    /// finishes until "Run Next Test" is clicked — meant for recording, where you want to narrate
+    /// a result before the next test's numbers start moving.</summary>
+    [ObservableProperty] private bool _autoAdvanceTests = true;
+
+    /// <summary>True while a run is paused between tests waiting for "Run Next Test".</summary>
+    [ObservableProperty] private bool _isWaitingForNextTest;
+
+    private TaskCompletionSource? _nextTestGate;
+
+    [RelayCommand]
+    private void RunNextTest() => _nextTestGate?.TrySetResult();
+
+    /// <summary>Passed into the engines as the pause point between top-level tests. A no-op when
+    /// auto-advance is on; otherwise blocks until RunNextTest is clicked or the run is cancelled.</summary>
+    private async Task WaitForNextTestIfNeededAsync(CancellationToken cancellationToken)
+    {
+        if (AutoAdvanceTests) return;
+
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _nextTestGate = gate;
+        IsWaitingForNextTest = true;
+        try
+        {
+            using var registration = cancellationToken.Register(() => gate.TrySetCanceled(cancellationToken));
+            await gate.Task;
+        }
+        finally
+        {
+            IsWaitingForNextTest = false;
+            if (ReferenceEquals(_nextTestGate, gate)) _nextTestGate = null;
+        }
+    }
 
     /// <summary>Bumped once per newly-detected failed block during verification — the Testing view watches this to trigger a flash + sound the instant a fake/corrupted block is found.</summary>
     [ObservableProperty] private int _fakeBlockFlashTrigger;
@@ -395,6 +434,17 @@ public partial class MainViewModel : ObservableObject
         {
             track.LastPhase = p.Phase;
             channel.ResetSmoothing();
+
+            // Write and verify usually run at noticeably different speeds (verify is a pure read;
+            // write includes filesystem/controller overhead write doesn't), so the ETA's own clock
+            // and smoothing reset here too — otherwise the estimate right after this handoff is
+            // still dragged around by the *other* pass's rate until enough of the new pass elapses
+            // to outweigh it.
+            if (track == CapacityTrack)
+            {
+                _capacityStopwatch = null;
+                _capacityEtaSmoothedSeconds = null;
+            }
         }
 
         if (track == CapacityTrack)
@@ -421,16 +471,25 @@ public partial class MainViewModel : ObservableObject
             channel.LivePoints.Add(displayMbps);
             if (channel.LivePoints.Count > 150) channel.LivePoints.RemoveAt(0);
 
-            // Color-code against the relevant claim (read vs write) so a struggling drive is
-            // obvious while the test is still running. Uses the smoothed value so the color
-            // doesn't flicker on every momentary dip/spike. The Capacity track has no speed claim
-            // to compare against, so it just stays its neutral color.
+            // Whether this channel is meeting its claim is shown as a small badge, not by
+            // recoloring the line itself — the line's color is that channel's fixed identity
+            // (write vs. read), so two very different numbers never render as the same color just
+            // because both happen to fall short of their claims. Uses the smoothed value so the
+            // badge doesn't flicker on every momentary dip/spike. The Capacity track has no speed
+            // claim to compare against.
             if (track != CapacityTrack)
             {
                 var claimForPhase = isPrimaryChannel ? ClaimedWriteSpeedMegabytesPerSecond : ClaimedReadSpeedMegabytesPerSecond;
-                var isMeetingClaim = claimForPhase <= 0 || displayMbps >= claimForPhase;
-                channel.ThroughputBrush = isMeetingClaim ? ThroughputPalette.Good : ThroughputPalette.Bad;
-                channel.ThroughputFillBrush = isMeetingClaim ? ThroughputPalette.GoodFill : ThroughputPalette.BadFill;
+                if (claimForPhase <= 0)
+                {
+                    channel.ClaimStatusGlyph = string.Empty;
+                }
+                else
+                {
+                    var isMeetingClaim = displayMbps >= claimForPhase;
+                    channel.ClaimStatusGlyph = isMeetingClaim ? "✓" : "▼"; // ✓ or ▼
+                    channel.ClaimStatusBrush = isMeetingClaim ? ThroughputPalette.Good : ThroughputPalette.Bad;
+                }
             }
         }
 
@@ -444,16 +503,24 @@ public partial class MainViewModel : ObservableObject
                 ? p.BytesProcessed
                 : (p.BytesProcessed > totalPhaseBytes ? p.BytesProcessed - totalPhaseBytes : 0);
 
-            channel.ProgressFraction = totalPhaseBytes == 0 ? 0 : (double)phaseBytesDone / totalPhaseBytes;
+            var phaseFraction = totalPhaseBytes == 0 ? 0 : (double)phaseBytesDone / totalPhaseBytes;
+            channel.ProgressFraction = phaseFraction;
             // The capacity engine's own FractionComplete already spans both passes, so it doubles
             // nicely as this track's overall (write + verify) progress.
             track.ProgressFraction = p.FractionComplete;
 
             var etaText = string.Empty;
-            if (p.FractionComplete > 0.001)
+            if (phaseFraction > 0.02) // wait for a little real signal — a ratio this early is mostly noise
             {
-                var remainingSeconds = _capacityStopwatch.Elapsed.TotalSeconds * (1 - p.FractionComplete) / p.FractionComplete;
-                etaText = FormatEta(remainingSeconds);
+                // Uses only THIS pass's own elapsed time and fraction — not the combined
+                // write+verify fraction — so a fast write pass doesn't drag out verify's estimate
+                // or vice versa. Smoothed with an EMA since a raw elapsed/fraction ratio swings
+                // wildly block-to-block, especially in the first second of a freshly-reset phase.
+                var rawRemainingSeconds = _capacityStopwatch.Elapsed.TotalSeconds * (1 - phaseFraction) / phaseFraction;
+                _capacityEtaSmoothedSeconds = _capacityEtaSmoothedSeconds is { } prevEta
+                    ? prevEta + (rawRemainingSeconds - prevEta) * 0.25
+                    : rawRemainingSeconds;
+                etaText = FormatEta(_capacityEtaSmoothedSeconds.Value);
             }
 
             channel.DetailText = $"{phaseBytesDone / 1_000_000_000.0:N2} GB of {totalPhaseBytes / 1_000_000_000.0:N2} GB {(isWriting ? "written" : "verified")}"
@@ -570,7 +637,10 @@ public partial class MainViewModel : ObservableObject
         CurrentPhaseLabel = "Starting…";
         _lastReportedBlocksFailed = 0;
         _capacityStopwatch = null;
+        _capacityEtaSmoothedSeconds = null;
         _overallTestStopwatch = Stopwatch.StartNew();
+        _nextTestGate = null;
+        IsWaitingForNextTest = false;
 
         var claimedCapacityBytes = (ulong)(ClaimedCapacityGb * 1_000_000_000);
         var progress = new Progress<TestProgress>(p =>
@@ -605,7 +675,7 @@ public partial class MainViewModel : ObservableObject
 
             _lastFileModeVolumeLetter = volumeLetter;
             var fileEngine = new FileModeEngine();
-            result = await fileEngine.RunAsync(volumeLetter, claimedCapacityBytes, settings, progress, cancellationToken);
+            result = await fileEngine.RunAsync(volumeLetter, claimedCapacityBytes, settings, progress, cancellationToken, WaitForNextTestIfNeededAsync);
         }
         else
         {
@@ -624,7 +694,7 @@ public partial class MainViewModel : ObservableObject
 
                 using var accessor = RawDiskAccessor.Open(drive.DevicePath, writable: true);
                 var engine = new TestEngine();
-                result = await engine.RunAsync(accessor, claimedCapacityBytes, settings, progress, cancellationToken);
+                result = await engine.RunAsync(accessor, claimedCapacityBytes, settings, progress, cancellationToken, WaitForNextTestIfNeededAsync);
             }
             finally
             {

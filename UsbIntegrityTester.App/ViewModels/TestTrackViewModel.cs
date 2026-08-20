@@ -21,6 +21,9 @@ public sealed partial class TestTrackViewModel : ObservableObject
     /// <summary>The "Read" channel for speed tracks, or "Verify" for the capacity track.</summary>
     public TestChannelViewModel Secondary { get; }
 
+    /// <summary>True only for the Capacity track — tells the Run Test view's hero-card template selector to use the GB-progress layout instead of the dual-sparkline speed layout.</summary>
+    public bool UsesCapacityLayout { get; }
+
     private readonly Brush _neutralBrush;
     private readonly Brush _neutralFillBrush;
 
@@ -39,19 +42,23 @@ public sealed partial class TestTrackViewModel : ObservableObject
     /// <summary>Latest raw sample waiting for the next throttled UI flush.</summary>
     public TestProgress? PendingProgress;
 
-    public TestTrackViewModel(string title, string primaryLabel, string secondaryLabel, Brush neutralBrush, Brush neutralFillBrush)
+    public TestTrackViewModel(string title, string primaryLabel, string secondaryLabel, Brush neutralBrush, Brush neutralFillBrush, bool usesCapacityLayout = false)
     {
         Title = title;
         Primary = new TestChannelViewModel(primaryLabel);
         Secondary = new TestChannelViewModel(secondaryLabel);
         _neutralBrush = neutralBrush;
         _neutralFillBrush = neutralFillBrush;
+        UsesCapacityLayout = usesCapacityLayout;
     }
 
     public void ResetForRun()
     {
+        // Write always uses this track's own family color; Read/Verify always uses the same fixed
+        // accent across every track, so the two channels are visually distinct no matter what —
+        // not just distinct when they happen to be on opposite sides of their claim.
         Primary.ResetForRun(_neutralBrush, _neutralFillBrush);
-        Secondary.ResetForRun(_neutralBrush, _neutralFillBrush);
+        Secondary.ResetForRun(ThroughputPalette.ReadAccent, ThroughputPalette.ReadAccentFill);
         PendingProgress = null;
         LastPhase = null;
         ProgressFraction = 0;

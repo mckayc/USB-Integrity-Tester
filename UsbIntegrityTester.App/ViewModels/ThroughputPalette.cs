@@ -28,6 +28,15 @@ internal static class ThroughputPalette
 
     public static readonly Brush MissingCapacity = Freeze(Color.FromRgb(0x55, 0x55, 0x55));
 
+    // A fixed identity color for every "Read"/"Verify" channel, regardless of which track it's
+    // in — write always uses the track's own family color above, read/verify always uses this.
+    // Previously the line itself was recolored green/red by whether it met its claim, which meant
+    // two very different numbers (e.g. a 0.4 MB/s write and a 67 MB/s read) could render as the
+    // identical color if both happened to fall short of their claims, making them look like the
+    // same series. Claim status is now a separate badge instead (see ClaimStatusGlyph).
+    public static readonly Brush ReadAccent = Freeze(Color.FromRgb(0x17, 0xA2, 0xB8));
+    public static readonly Brush ReadAccentFill = Freeze(Color.FromArgb(0x40, 0x17, 0xA2, 0xB8));
+
     public static Brush Freeze(Color color)
     {
         var brush = new SolidColorBrush(color);
