@@ -40,7 +40,7 @@ public class FraudDetectorTests
                 BlocksFailed = 0,
             },
             Slot1 = new SpeedTestSlotResult(
-                SpeedTestCategory.StandardBenchmark,
+                SpeedTestCategory.Seq1MQ8T1,
                 Write: new SpeedTestResult { AverageMegabytesPerSecond = 0, PeakBurstMegabytesPerSecond = 0, SampledMegabytesPerSecond = Array.Empty<double>() },
                 Read: new SpeedTestResult
                 {
@@ -69,7 +69,7 @@ public class FraudDetectorTests
                 BlocksFailed = 0,
             },
             Slot1 = new SpeedTestSlotResult(
-                SpeedTestCategory.StandardBenchmark,
+                SpeedTestCategory.Seq1MQ8T1,
                 Write: new SpeedTestResult
                 {
                     AverageMegabytesPerSecond = 5,
@@ -103,7 +103,7 @@ public class FraudDetectorTests
                 BlocksFailed = 0,
             },
             Slot1 = new SpeedTestSlotResult(
-                SpeedTestCategory.StandardBenchmark,
+                SpeedTestCategory.Seq1MQ8T1,
                 Write: new SpeedTestResult
                 {
                     AverageMegabytesPerSecond = 28,

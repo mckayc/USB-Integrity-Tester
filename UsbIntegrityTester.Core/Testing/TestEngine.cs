@@ -9,6 +9,7 @@ public sealed record TestResult
     public SpeedTestSlotResult? Slot1 { get; init; }
     public SpeedTestSlotResult? Slot2 { get; init; }
     public SpeedTestSlotResult? Slot3 { get; init; }
+    public SpeedTestSlotResult? Slot4 { get; init; }
 }
 
 /// <summary>Orchestrates capacity verification and speed measurement against a raw physical drive.</summary>
@@ -32,6 +33,7 @@ public sealed class TestEngine
         SpeedTestSlotResult? slot1Result = null;
         SpeedTestSlotResult? slot2Result = null;
         SpeedTestSlotResult? slot3Result = null;
+        SpeedTestSlotResult? slot4Result = null;
 
         var hasRunAnyTest = false;
         async Task GateAsync()
@@ -61,6 +63,8 @@ public sealed class TestEngine
                 TestPhase.MeasuringSpeedTestSlot2WriteSpeed, TestPhase.MeasuringSpeedTestSlot2ReadSpeed, GateAsync, progress, cancellationToken);
             slot3Result = await RunSlotAsync(accessor, settings.SpeedTestSlot3, availableBytes, settings,
                 TestPhase.MeasuringSpeedTestSlot3WriteSpeed, TestPhase.MeasuringSpeedTestSlot3ReadSpeed, GateAsync, progress, cancellationToken);
+            slot4Result = await RunSlotAsync(accessor, settings.SpeedTestSlot4, availableBytes, settings,
+                TestPhase.MeasuringSpeedTestSlot4WriteSpeed, TestPhase.MeasuringSpeedTestSlot4ReadSpeed, GateAsync, progress, cancellationToken);
         }
 
         progress?.Report(new TestProgress
@@ -76,6 +80,7 @@ public sealed class TestEngine
             Slot1 = slot1Result,
             Slot2 = slot2Result,
             Slot3 = slot3Result,
+            Slot4 = slot4Result,
         };
     }
 

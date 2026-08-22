@@ -203,7 +203,24 @@
                                               SpeedTemplate="{StaticResource SpeedCardTemplate}"/>
     </UserControl.Resources>
     <Grid>
-        <TabControl Background="Transparent">
+        <TabControl Background="Transparent" BorderThickness="0">
+            <TabControl.Template>
+                <!-- Default TabControl/TabItem chrome paints a plain white content pane regardless
+                     of app theme (it's the classic Windows tab-page background, not one of our
+                     DynamicResource tokens) — the app-wide dark theme never reaches it. Templating
+                     both replaces that with our own themed brushes, and wraps the page content in a
+                     visible bordered card so the two tabs read as clearly separate places. -->
+                <ControlTemplate TargetType="TabControl">
+                    <DockPanel>
+                        <TabPanel DockPanel.Dock="Top" IsItemsHost="True" Background="Transparent" Margin="0,0,0,12"/>
+                        <Border Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"
+                                CornerRadius="8">
+                            <ContentPresenter ContentSource="SelectedContent"/>
+                        </Border>
+                    </DockPanel>
+                </ControlTemplate>
+            </TabControl.Template>
             <TabControl.Resources>
                 <!-- Bigger, icon-carrying tab headers instead of the default plain-text ones —
                      each tab keeps a consistent identity color across its header icon and its
@@ -212,6 +229,27 @@
                 <Style TargetType="TabItem">
                     <Setter Property="Padding" Value="16,10"/>
                     <Setter Property="FontSize" Value="14"/>
+                    <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="TabItem">
+                                <Border x:Name="HeaderBorder" Background="Transparent" CornerRadius="6,6,0,0"
+                                        BorderThickness="0,0,0,2" BorderBrush="Transparent" Padding="{TemplateBinding Padding}">
+                                    <ContentPresenter x:Name="ContentSite" ContentSource="Header"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter TargetName="HeaderBorder" Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}"/>
+                                        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                    </Trigger>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="HeaderBorder" Property="Background" Value="{DynamicResource ControlFillColorDefaultBrush}"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
                 </Style>
             </TabControl.Resources>
 
@@ -331,7 +369,7 @@
                                     <TextBlock Grid.Column="0" Text="Run speed test" VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                                     <ui:ToggleSwitch Grid.Column="1" IsChecked="{Binding RunSpeedTest}"/>
                                 </Grid>
-                                <TextBlock Text="Each of the 3 slots below tests a real-world file-size category, with randomized file sizes across its range rather than one repeated size — pick which 3 to run."
+                                <TextBlock Text="Each of the 4 slots below runs either a real-world file-size category (randomized sizes across its range) or one of CrystalDiskMark's named benchmarks (SEQ1M/RND4K) — the defaults match CrystalDiskMark's own suite so results are directly comparable."
                                            Foreground="{DynamicResource TextFillColorTertiaryBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,14"/>
 
                                 <StackPanel IsEnabled="{Binding RunSpeedTest}">
@@ -378,9 +416,25 @@
                                                   SelectedValue="{Binding SpeedTestSlot3Category}" SelectedValuePath="Category" DisplayMemberPath="DisplayName"
                                                   IsEnabled="{Binding SpeedTestSlot3Enabled}"/>
                                     </Grid>
-                                    <TextBlock Foreground="{DynamicResource TextFillColorTertiaryBrush}" FontSize="11" TextWrapping="Wrap" Margin="34,0,0,0">
+                                    <TextBlock Foreground="{DynamicResource TextFillColorTertiaryBrush}" FontSize="11" TextWrapping="Wrap" Margin="34,0,0,12">
                                         <Run Text="{Binding SpeedTestSlot3Info.WorkloadDescription, Mode=OneWay}"/>
                                         <Run Text=" — file size " /><Run Text="{Binding SpeedTestSlot3Info.SizeRangeText, Mode=OneWay}"/>
+                                    </TextBlock>
+
+                                    <!-- Slot 4 -->
+                                    <Grid Margin="0,0,0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <CheckBox Grid.Column="0" IsChecked="{Binding SpeedTestSlot4Enabled}" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                        <ComboBox Grid.Column="1" ItemsSource="{Binding SpeedTestCategoryOptions}"
+                                                  SelectedValue="{Binding SpeedTestSlot4Category}" SelectedValuePath="Category" DisplayMemberPath="DisplayName"
+                                                  IsEnabled="{Binding SpeedTestSlot4Enabled}"/>
+                                    </Grid>
+                                    <TextBlock Foreground="{DynamicResource TextFillColorTertiaryBrush}" FontSize="11" TextWrapping="Wrap" Margin="34,0,0,0">
+                                        <Run Text="{Binding SpeedTestSlot4Info.WorkloadDescription, Mode=OneWay}"/>
+                                        <Run Text=" — file size " /><Run Text="{Binding SpeedTestSlot4Info.SizeRangeText, Mode=OneWay}"/>
                                     </TextBlock>
                                 </StackPanel>
                             </StackPanel>

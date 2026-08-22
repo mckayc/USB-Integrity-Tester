@@ -27,6 +27,7 @@ public static class ReportExporter
         AppendSlot(sb, report.TestResult.Slot1);
         AppendSlot(sb, report.TestResult.Slot2);
         AppendSlot(sb, report.TestResult.Slot3);
+        AppendSlot(sb, report.TestResult.Slot4);
 
         AppendRow(sb, "Verdict", report.Verdict.Verdict.ToString());
         AppendRow(sb, "Explanation", report.Verdict.Explanation);

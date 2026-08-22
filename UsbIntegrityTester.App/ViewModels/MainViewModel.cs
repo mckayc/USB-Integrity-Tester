@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Media;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -43,17 +44,24 @@ public partial class MainViewModel : ObservableObject
         new(SpeedTestCategoryOption.All[0].DisplayName, "Write", "Read", ThroughputPalette.Slot2Neutral, ThroughputPalette.Slot2NeutralFill);
     public TestTrackViewModel Slot3Track { get; } =
         new(SpeedTestCategoryOption.All[0].DisplayName, "Write", "Read", ThroughputPalette.Slot3Neutral, ThroughputPalette.Slot3NeutralFill);
+    public TestTrackViewModel Slot4Track { get; } =
+        new(SpeedTestCategoryOption.All[0].DisplayName, "Write", "Read", ThroughputPalette.Slot4Neutral, ThroughputPalette.Slot4NeutralFill);
 
-    /// <summary>All four tracks in a fixed order — Capacity, then the 3 speed test slots — always.
+    /// <summary>All five tracks in a fixed order — Capacity, then the 4 speed test slots — always.
     /// Cards used to reorder to put whichever test was running at the top, but that meant the whole
     /// layout reshuffled every time a test finished, which was disorienting; the accent border and
     /// pulsing dot on the active card already say "this one's running" without moving anything.</summary>
-    public IReadOnlyList<TestTrackViewModel> AllTracks => new[] { CapacityTrack, Slot1Track, Slot2Track, Slot3Track };
+    public IReadOnlyList<TestTrackViewModel> AllTracks => new[] { CapacityTrack, Slot1Track, Slot2Track, Slot3Track, Slot4Track };
+
+    private readonly string _settingsFilePath;
 
     public MainViewModel()
     {
         Directory.CreateDirectory(AppDataDir);
         _historyStore = new DriveHistoryStore(Path.Combine(AppDataDir, "history.db"));
+        _settingsFilePath = Path.Combine(AppDataDir, "settings.json");
+
+        ApplyUserSettings(UserSettingsStore.Load(_settingsFilePath));
 
         _liveUpdateTimer = new DispatcherTimer(DispatcherPriority.Background)
         {
@@ -68,6 +76,65 @@ public partial class MainViewModel : ObservableObject
 
         RefreshDrives();
         RefreshHistory();
+    }
+
+    private void ApplyUserSettings(UserSettings s)
+    {
+        ClaimedReadSpeedMegabytesPerSecond = s.ClaimedReadSpeedMegabytesPerSecond;
+        ClaimedWriteSpeedMegabytesPerSecond = s.ClaimedWriteSpeedMegabytesPerSecond;
+        ManualLinkSpeedOverride = s.ManualLinkSpeedOverride;
+
+        TestMode = s.TestMode;
+        ClearExistingData = s.ClearExistingData;
+        CleanupPolicy = s.CleanupPolicy;
+
+        RunCapacityTest = s.RunCapacityTest;
+        RunSpeedTest = s.RunSpeedTest;
+        CapacityScanDepth = s.CapacityScanDepth;
+
+        SpeedTestSlot1Enabled = s.SpeedTestSlot1Enabled;
+        SpeedTestSlot1Category = s.SpeedTestSlot1Category;
+        SpeedTestSlot2Enabled = s.SpeedTestSlot2Enabled;
+        SpeedTestSlot2Category = s.SpeedTestSlot2Category;
+        SpeedTestSlot3Enabled = s.SpeedTestSlot3Enabled;
+        SpeedTestSlot3Category = s.SpeedTestSlot3Category;
+        SpeedTestSlot4Enabled = s.SpeedTestSlot4Enabled;
+        SpeedTestSlot4Category = s.SpeedTestSlot4Category;
+
+        AutoAdvanceTests = s.AutoAdvanceTests;
+    }
+
+    /// <summary>Called on clean app shutdown (see MainWindow's Closing handler) — persists whatever
+    /// the user currently has configured so the next launch picks up where this session left off.</summary>
+    public void SaveSettings()
+    {
+        var settings = new UserSettings
+        {
+            ClaimedReadSpeedMegabytesPerSecond = ClaimedReadSpeedMegabytesPerSecond,
+            ClaimedWriteSpeedMegabytesPerSecond = ClaimedWriteSpeedMegabytesPerSecond,
+            ManualLinkSpeedOverride = ManualLinkSpeedOverride,
+
+            TestMode = TestMode,
+            ClearExistingData = ClearExistingData,
+            CleanupPolicy = CleanupPolicy,
+
+            RunCapacityTest = RunCapacityTest,
+            RunSpeedTest = RunSpeedTest,
+            CapacityScanDepth = CapacityScanDepth,
+
+            SpeedTestSlot1Enabled = SpeedTestSlot1Enabled,
+            SpeedTestSlot1Category = SpeedTestSlot1Category,
+            SpeedTestSlot2Enabled = SpeedTestSlot2Enabled,
+            SpeedTestSlot2Category = SpeedTestSlot2Category,
+            SpeedTestSlot3Enabled = SpeedTestSlot3Enabled,
+            SpeedTestSlot3Category = SpeedTestSlot3Category,
+            SpeedTestSlot4Enabled = SpeedTestSlot4Enabled,
+            SpeedTestSlot4Category = SpeedTestSlot4Category,
+
+            AutoAdvanceTests = AutoAdvanceTests,
+        };
+
+        UserSettingsStore.Save(_settingsFilePath, settings);
     }
 
     // --- Claimed Stats ---
@@ -164,20 +231,25 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _speedTestSlot1Enabled = true;
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SpeedTestSlot1Info))]
-    private SpeedTestCategory _speedTestSlot1Category = SpeedTestCategory.StandardBenchmark;
+    private SpeedTestCategory _speedTestSlot1Category = SpeedTestCategory.Seq1MQ8T1;
     [ObservableProperty] private bool _speedTestSlot2Enabled = true;
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SpeedTestSlot2Info))]
-    private SpeedTestCategory _speedTestSlot2Category = SpeedTestCategory.SmallFiles;
+    private SpeedTestCategory _speedTestSlot2Category = SpeedTestCategory.Seq1MQ1T1;
     [ObservableProperty] private bool _speedTestSlot3Enabled = true;
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SpeedTestSlot3Info))]
-    private SpeedTestCategory _speedTestSlot3Category = SpeedTestCategory.MediumFiles;
+    private SpeedTestCategory _speedTestSlot3Category = SpeedTestCategory.Rnd4KQ32T1;
+    [ObservableProperty] private bool _speedTestSlot4Enabled = true;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SpeedTestSlot4Info))]
+    private SpeedTestCategory _speedTestSlot4Category = SpeedTestCategory.Rnd4KQ1T1;
 
     /// <summary>The selected category's full description/size-range, for the Setup tab's helper text under each dropdown.</summary>
     public SpeedTestCategoryOption SpeedTestSlot1Info => SpeedTestCategoryOption.All.First(o => o.Category == SpeedTestSlot1Category);
     public SpeedTestCategoryOption SpeedTestSlot2Info => SpeedTestCategoryOption.All.First(o => o.Category == SpeedTestSlot2Category);
     public SpeedTestCategoryOption SpeedTestSlot3Info => SpeedTestCategoryOption.All.First(o => o.Category == SpeedTestSlot3Category);
+    public SpeedTestCategoryOption SpeedTestSlot4Info => SpeedTestCategoryOption.All.First(o => o.Category == SpeedTestSlot4Category);
 
     // Keep each Run Test card's "selected/not selected" state and title live as the user edits the
     // Setup tab, so a card doesn't misleadingly say "Not selected" for a test that's actually
@@ -187,9 +259,11 @@ public partial class MainViewModel : ObservableObject
     partial void OnSpeedTestSlot1EnabledChanged(bool value) => SyncSpeedTrackSelection();
     partial void OnSpeedTestSlot2EnabledChanged(bool value) => SyncSpeedTrackSelection();
     partial void OnSpeedTestSlot3EnabledChanged(bool value) => SyncSpeedTrackSelection();
+    partial void OnSpeedTestSlot4EnabledChanged(bool value) => SyncSpeedTrackSelection();
     partial void OnSpeedTestSlot1CategoryChanged(SpeedTestCategory value) => SyncSpeedTrackSelection();
     partial void OnSpeedTestSlot2CategoryChanged(SpeedTestCategory value) => SyncSpeedTrackSelection();
     partial void OnSpeedTestSlot3CategoryChanged(SpeedTestCategory value) => SyncSpeedTrackSelection();
+    partial void OnSpeedTestSlot4CategoryChanged(SpeedTestCategory value) => SyncSpeedTrackSelection();
 
     private void SyncSpeedTrackSelection()
     {
@@ -199,6 +273,8 @@ public partial class MainViewModel : ObservableObject
         Slot2Track.Title = SpeedTestCategoryOption.All.First(o => o.Category == SpeedTestSlot2Category).DisplayName;
         Slot3Track.IsSelected = RunSpeedTest && SpeedTestSlot3Enabled;
         Slot3Track.Title = SpeedTestCategoryOption.All.First(o => o.Category == SpeedTestSlot3Category).DisplayName;
+        Slot4Track.IsSelected = RunSpeedTest && SpeedTestSlot4Enabled;
+        Slot4Track.Title = SpeedTestCategoryOption.All.First(o => o.Category == SpeedTestSlot4Category).DisplayName;
     }
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ProgressPercent))]
@@ -282,8 +358,12 @@ public partial class MainViewModel : ObservableObject
         try
         {
             AvailableDrives.Clear();
-            foreach (var drive in DriveEnumerator.GetRemovableUsbDrives())
+            var foundDrives = DriveEnumerator.GetRemovableUsbDrives(out var diagnostics);
+            foreach (var drive in foundDrives)
                 AvailableDrives.Add(drive);
+
+            foreach (var line in diagnostics)
+                AppLog.Info($"Drive enum: {line}");
 
             SelectedDrive = AvailableDrives.FirstOrDefault();
             AppLog.Info($"Refreshed drives — found {AvailableDrives.Count}.");
@@ -417,6 +497,7 @@ public partial class MainViewModel : ObservableObject
         TestPhase.MeasuringSpeedTestSlot1WriteSpeed or TestPhase.MeasuringSpeedTestSlot1ReadSpeed => Slot1Track,
         TestPhase.MeasuringSpeedTestSlot2WriteSpeed or TestPhase.MeasuringSpeedTestSlot2ReadSpeed => Slot2Track,
         TestPhase.MeasuringSpeedTestSlot3WriteSpeed or TestPhase.MeasuringSpeedTestSlot3ReadSpeed => Slot3Track,
+        TestPhase.MeasuringSpeedTestSlot4WriteSpeed or TestPhase.MeasuringSpeedTestSlot4ReadSpeed => Slot4Track,
         _ => null,
     };
 
@@ -424,14 +505,17 @@ public partial class MainViewModel : ObservableObject
     {
         TestPhase.WritingCapacityPattern => "Writing test pattern…",
         TestPhase.VerifyingCapacityPattern => "Verifying blocks…",
-        TestPhase.MeasuringSpeedTestSlot1WriteSpeed or TestPhase.MeasuringSpeedTestSlot2WriteSpeed or TestPhase.MeasuringSpeedTestSlot3WriteSpeed => "Writing…",
-        TestPhase.MeasuringSpeedTestSlot1ReadSpeed or TestPhase.MeasuringSpeedTestSlot2ReadSpeed or TestPhase.MeasuringSpeedTestSlot3ReadSpeed => "Reading…",
+        TestPhase.MeasuringSpeedTestSlot1WriteSpeed or TestPhase.MeasuringSpeedTestSlot2WriteSpeed
+            or TestPhase.MeasuringSpeedTestSlot3WriteSpeed or TestPhase.MeasuringSpeedTestSlot4WriteSpeed => "Writing…",
+        TestPhase.MeasuringSpeedTestSlot1ReadSpeed or TestPhase.MeasuringSpeedTestSlot2ReadSpeed
+            or TestPhase.MeasuringSpeedTestSlot3ReadSpeed or TestPhase.MeasuringSpeedTestSlot4ReadSpeed => "Reading…",
         _ => string.Empty,
     };
 
     /// <summary>Every tracked phase is either the "Write" half (WritingCapacityPattern or a *Write* speed phase) or the "Read"/"Verify" half.</summary>
     private static bool IsPrimaryChannelPhase(TestPhase phase) => phase is TestPhase.WritingCapacityPattern
-        or TestPhase.MeasuringSpeedTestSlot1WriteSpeed or TestPhase.MeasuringSpeedTestSlot2WriteSpeed or TestPhase.MeasuringSpeedTestSlot3WriteSpeed;
+        or TestPhase.MeasuringSpeedTestSlot1WriteSpeed or TestPhase.MeasuringSpeedTestSlot2WriteSpeed
+        or TestPhase.MeasuringSpeedTestSlot3WriteSpeed or TestPhase.MeasuringSpeedTestSlot4WriteSpeed;
 
     private void FlushLiveProgress()
     {
@@ -589,10 +673,13 @@ public partial class MainViewModel : ObservableObject
     {
         TestPhase.WritingCapacityPattern => "Writing unique data to every tested block, to prove each address is real storage",
         TestPhase.VerifyingCapacityPattern => "Reading each block back to confirm it holds its own data, not a copy",
-        TestPhase.MeasuringSpeedTestSlot1WriteSpeed or TestPhase.MeasuringSpeedTestSlot2WriteSpeed or TestPhase.MeasuringSpeedTestSlot3WriteSpeed
-            => $"Writing randomly-sized {TrackForPhase(phase)?.Title ?? "files"} — simulates copying files like this to the drive",
-        TestPhase.MeasuringSpeedTestSlot1ReadSpeed or TestPhase.MeasuringSpeedTestSlot2ReadSpeed or TestPhase.MeasuringSpeedTestSlot3ReadSpeed
-            => $"Reading randomly-sized {TrackForPhase(phase)?.Title ?? "files"} — simulates copying files like this from the drive",
+        TestPhase.MeasuringSpeedTestSlot1WriteSpeed or TestPhase.MeasuringSpeedTestSlot2WriteSpeed
+            or TestPhase.MeasuringSpeedTestSlot3WriteSpeed or TestPhase.MeasuringSpeedTestSlot4WriteSpeed
+            => $"Writing — {TrackForPhase(phase)?.Title ?? "speed test"}",
+        TestPhase.MeasuringSpeedTestSlot1ReadSpeed or TestPhase.MeasuringSpeedTestSlot2ReadSpeed
+            or TestPhase.MeasuringSpeedTestSlot3ReadSpeed or TestPhase.MeasuringSpeedTestSlot4ReadSpeed
+            => $"Reading — {TrackForPhase(phase)?.Title ?? "speed test"}",
+        TestPhase.FlushingSpeedTestCache => "Writing throwaway data so the read tests above don't come back from the drive's own cache",
         TestPhase.Complete => "Complete",
         _ => phase.ToString(),
     };
@@ -612,6 +699,85 @@ public partial class MainViewModel : ObservableObject
         CopyLogsButtonText = succeeded ? "✅ Copied!" : "⚠ Copy failed — try again";
         await Task.Delay(1500);
         CopyLogsButtonText = "\U0001F4CB Copy All";
+    }
+
+    [ObservableProperty] private string _copyReportButtonText = "\U0001F4CB Copy as Text";
+
+    [RelayCommand]
+    private async Task CopyReportAsync()
+    {
+        var text = BuildReportText();
+        var succeeded = TrySetClipboardText(text);
+        CopyReportButtonText = succeeded ? "✅ Copied!" : "⚠ Copy failed — try again";
+        await Task.Delay(1500);
+        CopyReportButtonText = "\U0001F4CB Copy as Text";
+    }
+
+    [RelayCommand]
+    private void SaveReportText()
+    {
+        if (LastReport is null) return;
+
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Filter = "Text file (*.txt)|*.txt",
+            FileName = $"usb-integrity-report-{DateTime.Now:yyyyMMdd-HHmmss}.txt",
+        };
+
+        if (dialog.ShowDialog() != true) return;
+
+        try
+        {
+            File.WriteAllText(dialog.FileName, BuildReportText());
+            AppLog.Info($"Report saved to \"{dialog.FileName}\".");
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error($"SaveReportText failed: {ex}");
+        }
+    }
+
+    /// <summary>Plain-text rendering of the Report page — same figures shown on screen, formatted so
+    /// it reads cleanly pasted into an email, ticket, or chat message.</summary>
+    private string BuildReportText()
+    {
+        if (LastReport is not { } report) return "(no test run yet)";
+
+        var sb = new StringBuilder();
+        sb.AppendLine("USB Integrity Tester — Report");
+        sb.AppendLine($"Drive: {report.DriveLabel}");
+        sb.AppendLine($"Tested: {report.TimestampUtc:g} UTC");
+        sb.AppendLine();
+
+        sb.AppendLine($"Verdict: {VerdictText}");
+        sb.AppendLine(VerdictExplanationText);
+        sb.AppendLine();
+
+        sb.AppendLine("Capacity");
+        sb.AppendLine($"  {CapacitySummary.HeadlineText}");
+        if (!string.IsNullOrEmpty(CapacitySummary.DetailText))
+            sb.AppendLine($"  {CapacitySummary.DetailText}");
+        if (!string.IsNullOrEmpty(CapacitySummary.ScanThoroughnessText))
+            sb.AppendLine($"  {CapacitySummary.ScanThoroughnessText}");
+        sb.AppendLine();
+
+        sb.AppendLine("Speed Tests");
+        foreach (var row in SpeedTestRows)
+        {
+            sb.AppendLine($"  {row.CategoryName} — {row.WorkloadDescription} ({row.SizeRangeText})");
+            sb.AppendLine($"    Write: {row.WriteAvgText} ({row.WritePeakText}{(string.IsNullOrEmpty(row.WriteClaimText) ? "" : $", {row.WriteClaimText}")})");
+            sb.AppendLine($"    Read:  {row.ReadAvgText} ({row.ReadPeakText}{(string.IsNullOrEmpty(row.ReadClaimText) ? "" : $", {row.ReadClaimText}")})");
+            sb.AppendLine($"    {row.PracticalTimeText}");
+        }
+        sb.AppendLine();
+
+        sb.AppendLine("Details");
+        sb.AppendLine($"  Serial Number: {report.SerialNumber}");
+        sb.AppendLine($"  Claimed Capacity: {report.ClaimedCapacityBytes / 1_000_000_000.0:N1} GB");
+        foreach (var stat in ExtraStats)
+            sb.AppendLine($"  {stat.Label}: {stat.Value}");
+
+        return sb.ToString();
     }
 
     private static bool TrySetClipboardText(string text)
@@ -650,6 +816,7 @@ public partial class MainViewModel : ObservableObject
             SpeedTestSlot1 = new SpeedTestSlotSettings(SpeedTestSlot1Enabled, SpeedTestSlot1Category),
             SpeedTestSlot2 = new SpeedTestSlotSettings(SpeedTestSlot2Enabled, SpeedTestSlot2Category),
             SpeedTestSlot3 = new SpeedTestSlotSettings(SpeedTestSlot3Enabled, SpeedTestSlot3Category),
+            SpeedTestSlot4 = new SpeedTestSlotSettings(SpeedTestSlot4Enabled, SpeedTestSlot4Category),
             CapacityScanDepth = CapacityScanDepth,
         };
 
@@ -728,6 +895,18 @@ public partial class MainViewModel : ObservableObject
         var verdict = FraudDetector.Evaluate(
             claimedCapacityBytes, ClaimedReadSpeedMegabytesPerSecond, ClaimedWriteSpeedMegabytesPerSecond, result);
 
+        UsbLinkSpeed? negotiatedLinkSpeed;
+        if (EffectiveLinkSpeed is { } overrideSpeed)
+        {
+            negotiatedLinkSpeed = overrideSpeed;
+        }
+        else
+        {
+            AppLog.Info($"Auto-detecting negotiated link speed for drive {drive.PhysicalDriveIndex}…");
+            negotiatedLinkSpeed = UsbPortInspector.GetNegotiatedLinkSpeed(
+                drive.PhysicalDriveIndex, msg => AppLog.Info($"  {msg}"));
+        }
+
         var report = new ReportModel
         {
             TimestampUtc = DateTime.UtcNow,
@@ -736,7 +915,7 @@ public partial class MainViewModel : ObservableObject
             ClaimedCapacityBytes = claimedCapacityBytes,
             ClaimedReadSpeedMegabytesPerSecond = ClaimedReadSpeedMegabytesPerSecond,
             ClaimedWriteSpeedMegabytesPerSecond = ClaimedWriteSpeedMegabytesPerSecond,
-            NegotiatedLinkSpeed = EffectiveLinkSpeed ?? UsbPortInspector.GetNegotiatedLinkSpeed(drive.PhysicalDriveIndex),
+            NegotiatedLinkSpeed = negotiatedLinkSpeed,
             TestResult = result,
             Verdict = verdict,
             TestDurationSeconds = _overallTestStopwatch?.Elapsed.TotalSeconds ?? 0,
@@ -834,6 +1013,7 @@ public partial class MainViewModel : ObservableObject
         AddRow(report.TestResult.Slot1);
         AddRow(report.TestResult.Slot2);
         AddRow(report.TestResult.Slot3);
+        AddRow(report.TestResult.Slot4);
 
         SpeedTestRows = new ObservableCollection<SpeedTestSlotReportRow>(rows);
     }
@@ -859,14 +1039,31 @@ public partial class MainViewModel : ObservableObject
         if (report.NegotiatedLinkSpeed is { } linkSpeed)
         {
             var ceiling = linkSpeed.MaxTheoreticalMegabytesPerSecond();
-            var bestMeasured = new[] { report.TestResult.Slot1, report.TestResult.Slot2, report.TestResult.Slot3 }
+            var bestMeasured = new[] { report.TestResult.Slot1, report.TestResult.Slot2, report.TestResult.Slot3, report.TestResult.Slot4 }
                 .Where(s => s is not null)
                 .SelectMany(s => new[] { s!.Read.AverageMegabytesPerSecond, s.Write.AverageMegabytesPerSecond })
                 .DefaultIfEmpty(0).Max();
 
-            stats.Add(new ReportStat("Negotiated Link", $"{linkSpeed.DisplayName()} ({ceiling:N0} MB/s ceiling)"));
-            if (bestMeasured > 0 && ceiling > 0)
+            // Measured throughput can't legitimately exceed the link's real-world ceiling by much —
+            // some margin for overhead/rounding is normal, but well past 100% means the detected
+            // link speed itself is wrong (walked to the wrong hub/port), not that the drive is
+            // somehow faster than physics allows. Flag that instead of printing a nonsense percentage.
+            const double plausibilityTolerance = 1.1;
+            var isImplausible = ceiling > 0 && bestMeasured > ceiling * plausibilityTolerance;
+
+            stats.Add(new ReportStat("Negotiated Link", isImplausible
+                ? $"{linkSpeed.DisplayName()} ({ceiling:N0} MB/s ceiling) ⚠ likely misdetected"
+                : $"{linkSpeed.DisplayName()} ({ceiling:N0} MB/s ceiling)"));
+
+            if (isImplausible)
+            {
+                stats.Add(new ReportStat("Link Utilization", "⚠ Measured speed exceeds this link's ceiling — detected link speed is unreliable, not the drive"));
+                AppLog.Warning($"Negotiated link speed ({linkSpeed.DisplayName()}, {ceiling:N0} MB/s ceiling) is implausible: measured {bestMeasured:N0} MB/s exceeds it. Link-speed detection likely resolved the wrong hub/port — use Inspect Port on the Testing tab to see the device-tree walk.");
+            }
+            else if (bestMeasured > 0 && ceiling > 0)
+            {
                 stats.Add(new ReportStat("Link Utilization", $"{bestMeasured / ceiling:P0} of link ceiling"));
+            }
         }
 
         ExtraStats = new ObservableCollection<ReportStat>(stats);

@@ -32,7 +32,7 @@ public enum TestCleanupPolicy
     KeepUntilManual,
 }
 
-/// <summary>One of the speed test's 3 configurable slots — whether it runs, and which real-world file-size category it simulates.</summary>
+/// <summary>One of the speed test's 4 configurable slots — whether it runs, and which category it simulates (a real-world file-size range, or one of the CrystalDiskMark-replica benchmarks).</summary>
 public sealed record SpeedTestSlotSettings(bool Enabled, SpeedTestCategory Category);
 
 public sealed record TestSettings
@@ -49,9 +49,12 @@ public sealed record TestSettings
     public bool RunCapacityTest { get; init; } = true;
     public bool RunSpeedTest { get; init; } = true;
 
-    public SpeedTestSlotSettings SpeedTestSlot1 { get; init; } = new(true, SpeedTestCategory.StandardBenchmark);
-    public SpeedTestSlotSettings SpeedTestSlot2 { get; init; } = new(true, SpeedTestCategory.SmallFiles);
-    public SpeedTestSlotSettings SpeedTestSlot3 { get; init; } = new(true, SpeedTestCategory.MediumFiles);
+    // Default to CrystalDiskMark's own 4-test suite (in its usual top-to-bottom order) so a run of
+    // this app's speed test is directly comparable to a CrystalDiskMark run on the same drive.
+    public SpeedTestSlotSettings SpeedTestSlot1 { get; init; } = new(true, SpeedTestCategory.Seq1MQ8T1);
+    public SpeedTestSlotSettings SpeedTestSlot2 { get; init; } = new(true, SpeedTestCategory.Seq1MQ1T1);
+    public SpeedTestSlotSettings SpeedTestSlot3 { get; init; } = new(true, SpeedTestCategory.Rnd4KQ32T1);
+    public SpeedTestSlotSettings SpeedTestSlot4 { get; init; } = new(true, SpeedTestCategory.Rnd4KQ1T1);
 
     public CapacityScanDepth CapacityScanDepth { get; init; } = CapacityScanDepth.Quick;
     public int BlockSizeBytes { get; init; } = 1024 * 1024; // 1 MiB — capacity test's block granularity

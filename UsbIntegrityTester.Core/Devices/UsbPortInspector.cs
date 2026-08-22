@@ -10,10 +10,13 @@ namespace UsbIntegrityTester.Core.Devices;
 /// "USB 3.0 port" from "USB 3.0 port with a USB 2.0 hub silently in the path."
 /// </summary>
 /// <remarks>
-/// Distinguishes Low/Full/High/Super-or-higher reliably from the base EX IOCTL, then uses
-/// IOCTL_USB_GET_NODE_CONNECTION_INFORMATION_EX_V2 to tell Gen 1 (5 Gbps) apart from Gen 2-or-
-/// higher (10/20 Gbps). It cannot tell Gen 2 (10 Gbps) apart from Gen 2x2 (20 Gbps) — that needs
-/// the device's SuperSpeedPlus BOS descriptor, which this doesn't read.
+/// Reads Low/Full/High/Super from the base IOCTL_USB_GET_NODE_CONNECTION_INFORMATION_EX, then
+/// cross-checks against IOCTL_USB_GET_NODE_CONNECTION_INFORMATION_EX_V2's operating-speed flags —
+/// both to tell Gen 1 (5 Gbps) apart from Gen 2-or-higher (10/20 Gbps), and because the base
+/// IOCTL's Speed byte is known to misreport on some USB-to-NVMe/SATA bridge chips (a device
+/// sustaining hundreds of MB/s while the base IOCTL claims High-Speed is a strong tell). EX_V2's
+/// flags win whenever the two disagree. This still cannot tell Gen 2 (10 Gbps) apart from Gen 2x2
+/// (20 Gbps) — that needs the device's SuperSpeedPlus BOS descriptor, which this doesn't read.
 /// </remarks>
 public sealed record UsbDeviceDetails
 {
@@ -298,12 +301,37 @@ public static class UsbPortInspector
 
         var baseSpeed = QueryBaseSpeed(handle, portNumber);
         log?.Invoke($"Base IOCTL speed byte decoded as: {baseSpeed?.ToString() ?? "(IOCTL failed)"}.");
-        if (baseSpeed != UsbLinkSpeed.Super5Gbps) return baseSpeed;
 
-        // Base IOCTL can't distinguish SuperSpeed (Gen 1) from SuperSpeedPlus (Gen 2+) — refine it.
-        var isPlus = QueryIsSuperSpeedPlusOrHigher(handle, portNumber);
-        log?.Invoke($"EX_V2 SuperSpeedPlus-or-higher flag: {isPlus?.ToString() ?? "(IOCTL failed)"}.");
-        return isPlus == true ? UsbLinkSpeed.SuperPlus10Gbps : baseSpeed;
+        // The legacy EX IOCTL's Speed byte is known to misreport on some USB-to-NVMe/SATA bridge
+        // chips (observed with an ASMedia ASM235CM bridge reporting High-Speed while the drive
+        // sustained 250-350 MB/s — physically impossible over a real 480 Mbps link). The newer
+        // EX_V2 IOCTL's operating-speed flags are more reliable, so query them unconditionally and
+        // trust them over the base byte whenever they disagree, rather than only using EX_V2 to
+        // refine an already-SuperSpeed result.
+        var v2Flags = QueryV2Flags(handle, portNumber);
+        if (v2Flags is not { } flags)
+        {
+            log?.Invoke("EX_V2 IOCTL failed — falling back to the base IOCTL result only.");
+            return baseSpeed;
+        }
+
+        log?.Invoke($"EX_V2 flags: operatingAtSuperSpeedOrHigher={flags.OperatingAtSuperSpeedOrHigher}, operatingAtSuperSpeedPlusOrHigher={flags.OperatingAtSuperSpeedPlusOrHigher}.");
+
+        if (flags.OperatingAtSuperSpeedPlusOrHigher)
+        {
+            if (baseSpeed != UsbLinkSpeed.SuperPlus10Gbps)
+                log?.Invoke($"EX_V2 reports SuperSpeedPlus-or-higher but base IOCTL said {baseSpeed?.ToString() ?? "(failed)"} — trusting EX_V2.");
+            return UsbLinkSpeed.SuperPlus10Gbps;
+        }
+
+        if (flags.OperatingAtSuperSpeedOrHigher)
+        {
+            if (baseSpeed != UsbLinkSpeed.Super5Gbps)
+                log?.Invoke($"EX_V2 reports SuperSpeed-or-higher but base IOCTL said {baseSpeed?.ToString() ?? "(failed)"} — trusting EX_V2 (some bridge chips report stale speed via the legacy IOCTL).");
+            return UsbLinkSpeed.Super5Gbps;
+        }
+
+        return baseSpeed;
     }
 
     private static UsbLinkSpeed? QueryBaseSpeed(Microsoft.Win32.SafeHandles.SafeFileHandle handle, uint portNumber)
@@ -336,7 +364,9 @@ public static class UsbPortInspector
         }
     }
 
-    private static bool? QueryIsSuperSpeedPlusOrHigher(Microsoft.Win32.SafeHandles.SafeFileHandle handle, uint portNumber)
+    private readonly record struct V2SpeedFlags(bool OperatingAtSuperSpeedOrHigher, bool OperatingAtSuperSpeedPlusOrHigher);
+
+    private static V2SpeedFlags? QueryV2Flags(Microsoft.Win32.SafeHandles.SafeFileHandle handle, uint portNumber)
     {
         const int bufferSize = 16; // ConnectionIndex(4) + Length(4) + SupportedUsbProtocols(4) + Flags(4)
         var buffer = Marshal.AllocHGlobal(bufferSize);
@@ -353,7 +383,9 @@ public static class UsbPortInspector
             if (!ok) return null;
 
             var flags = Marshal.ReadInt32(buffer, 12);
-            return (flags & Native.FLAG_DEVICE_IS_OPERATING_AT_SUPERSPEEDPLUS_OR_HIGHER) != 0;
+            return new V2SpeedFlags(
+                (flags & Native.FLAG_DEVICE_IS_OPERATING_AT_SUPERSPEED_OR_HIGHER) != 0,
+                (flags & Native.FLAG_DEVICE_IS_OPERATING_AT_SUPERSPEEDPLUS_OR_HIGHER) != 0);
         }
         finally
         {
@@ -383,7 +415,8 @@ public static class UsbPortInspector
         // USB_PROTOCOLS bitfield: Usb110 = bit 0, Usb200 = bit 1, Usb300 = bit 2.
         public const int USB_PROTOCOLS_USB300_BIT = 1 << 2;
 
-        // USB_NODE_CONNECTION_INFORMATION_EX_V2_FLAGS bitfield, bit 2 = DeviceIsOperatingAtSuperSpeedPlusOrHigher.
+        // USB_NODE_CONNECTION_INFORMATION_EX_V2_FLAGS bitfield.
+        public const int FLAG_DEVICE_IS_OPERATING_AT_SUPERSPEED_OR_HIGHER = 1 << 0;
         public const int FLAG_DEVICE_IS_OPERATING_AT_SUPERSPEEDPLUS_OR_HIGHER = 1 << 2;
 
         public static Guid GUID_DEVINTERFACE_USB_HUB = new("f18a0e88-c30c-11d0-8815-00a0c906bed8");

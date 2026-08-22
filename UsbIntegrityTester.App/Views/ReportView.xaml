@@ -86,9 +86,14 @@
         <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,16">
             <TextBlock Text="Report" FontSize="24" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,16,0"
                        Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
-            <ui:Button Content="Export Report as PNG" Click="ExportReportPng_Click" Padding="12,6">
+            <ui:Button Content="Save as Text File" Command="{Binding SaveReportTextCommand}" Padding="12,6" Margin="0,0,8,0">
                 <ui:Button.Icon>
-                    <ui:SymbolIcon Symbol="ArrowExportUp24"/>
+                    <ui:SymbolIcon Symbol="Save24"/>
+                </ui:Button.Icon>
+            </ui:Button>
+            <ui:Button Content="{Binding CopyReportButtonText}" Command="{Binding CopyReportCommand}" Padding="12,6">
+                <ui:Button.Icon>
+                    <ui:SymbolIcon Symbol="Copy24"/>
                 </ui:Button.Icon>
             </ui:Button>
         </StackPanel>

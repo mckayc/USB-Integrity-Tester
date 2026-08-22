@@ -48,7 +48,12 @@ public partial class MainWindow : FluentWindow
             var theme = DarkModeToggle.IsChecked == true ? ApplicationTheme.Dark : ApplicationTheme.Light;
             ApplicationThemeManager.Apply(theme, WindowBackdropType.Mica, true);
         };
-        Closing += (_, _) => (DataContext as MainViewModel)?.CleanupOnAppClose();
+        Closing += (_, _) =>
+        {
+            var viewModel = DataContext as MainViewModel;
+            viewModel?.CleanupOnAppClose();
+            viewModel?.SaveSettings();
+        };
     }
 
     private void NavigationItem_Click(object sender, RoutedEventArgs e) => NavigateTo((NavigationViewItem)sender);

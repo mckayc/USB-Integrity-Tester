@@ -38,7 +38,7 @@ public static class FraudDetector
         ulong claimedCapacityBytes, double? claimedReadSpeedMegabytesPerSecond,
         double? claimedWriteSpeedMegabytesPerSecond, TestResult result)
     {
-        if (result.Capacity is null && result.Slot1 is null && result.Slot2 is null && result.Slot3 is null)
+        if (result.Capacity is null && result.Slot1 is null && result.Slot2 is null && result.Slot3 is null && result.Slot4 is null)
         {
             return new VerdictResult { Verdict = DriveVerdict.Failed, Explanation = "No test data was collected." };
         }
