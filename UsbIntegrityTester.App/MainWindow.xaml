@@ -7,6 +7,7 @@
                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
                  mc:Ignorable="d"
                  Title="USB Integrity Tester" Height="720" Width="1080"
+                 Icon="pack://application:,,,/Assets/AppIcon.ico"
                  ExtendsContentIntoTitleBar="True"
                  WindowBackdropType="Mica"
                  WindowCornerPreference="Round">

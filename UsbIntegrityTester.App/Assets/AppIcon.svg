@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2EC0FF"/>
+      <stop offset="100%" stop-color="#0090DE"/>
+    </linearGradient>
+  </defs>
+
+  <!-- background -->
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="url(#bg)" stroke="#0B4C73" stroke-width="6"/>
+
+  <!-- gauge reading (green arc only — no faint unlit track, less clutter at small sizes) -->
+  <path d="M 75.7,188.3 A 74,74 0 1 1 187.9,92.5" fill="none" stroke="#2ECC71" stroke-width="24" stroke-linecap="round"/>
+
+  <!-- needle (its base is covered by the hub below) -->
+  <line x1="128" y1="136" x2="196.4" y2="86.4" stroke="#FFFFFF" stroke-width="15" stroke-linecap="round"/>
+
+  <!-- big bold hub / verified badge -->
+  <circle cx="128" cy="136" r="50" fill="#17A05A" stroke="#0B4C73" stroke-width="6"/>
+  <path d="M 104,138 L 120,155 L 155,114" fill="none" stroke="#FFFFFF" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
