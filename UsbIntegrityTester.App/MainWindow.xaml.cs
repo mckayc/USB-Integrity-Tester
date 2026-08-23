@@ -54,6 +54,9 @@ public partial class MainWindow : FluentWindow
             viewModel?.CleanupOnAppClose();
             viewModel?.SaveSettings();
         };
+
+        if (DataContext is MainViewModel mainViewModel)
+            mainViewModel.NavigateToReportRequested += () => NavigateToTag("Report");
     }
 
     private void NavigationItem_Click(object sender, RoutedEventArgs e) => NavigateTo((NavigationViewItem)sender);
@@ -76,9 +79,11 @@ public partial class MainWindow : FluentWindow
         ApplicationThemeManager.Apply(theme, WindowBackdropType.Mica, true);
     }
 
-    private void NavigateTo(NavigationViewItem item)
+    private void NavigateTo(NavigationViewItem item) => NavigateToTag((string)item.Tag);
+
+    private void NavigateToTag(string tag)
     {
-        UIElement? view = item.Tag switch
+        UIElement? view = tag switch
         {
             "ClaimedStats" => _claimedStatsView,
             "UsbConnections" => _usbConnectionsView,
@@ -93,7 +98,7 @@ public partial class MainWindow : FluentWindow
 
         foreach (var menuItem in RootNavigation.MenuItems)
             if (menuItem is NavigationViewItem navItem)
-                navItem.IsActive = ReferenceEquals(navItem, item);
+                navItem.IsActive = (string)navItem.Tag == tag;
 
         RootNavigation.ReplaceContent(view, DataContext);
     }

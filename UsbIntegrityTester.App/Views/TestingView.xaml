@@ -78,6 +78,8 @@
                                Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
                     <TextBlock Text="{Binding PeakThroughputText}" FontSize="10"
                                Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                    <TextBlock Text="{Binding DetailText}" FontSize="10" TextWrapping="Wrap"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
                 </StackPanel>
                 <controls:Sparkline Grid.Row="3" Points="{Binding LivePoints}" StrokeThickness="2"
                                      Stroke="{Binding ThroughputBrush}" Fill="{Binding ThroughputFillBrush}"/>
@@ -369,7 +371,7 @@
                                     <TextBlock Grid.Column="0" Text="Run speed test" VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                                     <ui:ToggleSwitch Grid.Column="1" IsChecked="{Binding RunSpeedTest}"/>
                                 </Grid>
-                                <TextBlock Text="Each of the 4 slots below runs either a real-world file-size category (randomized sizes across its range) or one of CrystalDiskMark's named benchmarks (SEQ1M/RND4K) — the defaults match CrystalDiskMark's own suite so results are directly comparable."
+                                <TextBlock Text="Each of the 4 slots below tests a real-world file-size category, with randomized file sizes across its range rather than one repeated size — pick which 4 to run."
                                            Foreground="{DynamicResource TextFillColorTertiaryBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,14"/>
 
                                 <StackPanel IsEnabled="{Binding RunSpeedTest}">
@@ -440,6 +442,68 @@
                             </StackPanel>
                         </ui:CardExpander>
 
+                        <ui:CardExpander Header="Real-World File Copy (optional)" IsExpanded="False" Margin="0,0,0,20">
+                            <ui:CardExpander.Icon>
+                                <ui:SymbolIcon Symbol="Folder24"/>
+                            </ui:CardExpander.Icon>
+                            <StackPanel Margin="0,8,0,0">
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="Run this test" VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                    <ui:ToggleSwitch Grid.Column="1" IsChecked="{Binding RunRealFileCopyTest}"/>
+                                </Grid>
+                                <TextBlock Text="A &quot;benchmark vs. real world&quot; comparison: copies a folder of your own files to the drive, then back to a folder on this computer, verifying every file against the original by checksum. Uses this computer's normal file-copy behavior (not the synthetic unbuffered tests above), so the numbers reflect what an actual copy would feel like."
+                                           Foreground="{DynamicResource TextFillColorTertiaryBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,14"/>
+
+                                <StackPanel IsEnabled="{Binding RunRealFileCopyTest}">
+                                    <TextBlock Text="Folder to copy" FontWeight="SemiBold" Margin="0,0,0,4" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                    <Grid Margin="0,0,0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox Grid.Column="0" Text="{Binding RealFileCopySourceFolder, Mode=OneWay}" IsReadOnly="True"
+                                                  Margin="0,0,8,0" VerticalContentAlignment="Center"/>
+                                        <ui:Button Grid.Column="1" Content="Browse…" Command="{Binding BrowseRealFileCopySourceFolderCommand}"/>
+                                    </Grid>
+                                    <TextBlock Text="{Binding RealFileCopyScanSummaryText}" FontSize="12" Margin="0,0,0,2"
+                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{Binding RealFileCopyExtensionBreakdownText}" FontSize="11" Margin="0,0,0,4" TextWrapping="Wrap"
+                                               Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                                               Visibility="{Binding RealFileCopyExtensionBreakdownText, Converter={StaticResource EmptyStringToVisibilityConverter}}"/>
+                                    <TextBlock Text="{Binding RealFileCopySpaceWarningText}" FontSize="12" Margin="0,0,0,12" TextWrapping="Wrap"
+                                               Foreground="#E74C3C"
+                                               Visibility="{Binding RealFileCopySpaceWarningText, Converter={StaticResource EmptyStringToVisibilityConverter}}"/>
+
+                                    <TextBlock Text="Copy back to (on this computer)" FontWeight="SemiBold" Margin="0,0,0,4" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                    <Grid Margin="0,0,0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox Grid.Column="0" Text="{Binding RealFileCopyDestinationParentFolder, Mode=OneWay}" IsReadOnly="True"
+                                                  Margin="0,0,8,0" VerticalContentAlignment="Center"/>
+                                        <ui:Button Grid.Column="1" Content="Browse…" Command="{Binding BrowseRealFileCopyDestinationFolderCommand}"/>
+                                    </Grid>
+                                    <TextBlock Text="A new dated subfolder is created here automatically for the round-tripped copy, so nothing already in this folder is touched."
+                                               Foreground="{DynamicResource TextFillColorTertiaryBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,12"/>
+
+                                    <Grid Margin="0,0,0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Delete the computer-side copy after the test" VerticalAlignment="Center" TextWrapping="Wrap"
+                                                   Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                        <ui:ToggleSwitch Grid.Column="1" IsChecked="{Binding DeleteComputerCopyAfterTest}"/>
+                                    </Grid>
+                                </StackPanel>
+                            </StackPanel>
+                        </ui:CardExpander>
+
                         <TextBlock Text="Head to the Run Test tab to start and watch progress." FontStyle="Italic"
                                    Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
                     </StackPanel>
@@ -457,6 +521,7 @@
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <Grid Margin="24">
                             <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
@@ -529,6 +594,58 @@
                                     </Style>
                                 </ItemsControl.ItemContainerStyle>
                             </ItemsControl>
+
+                            <!-- Which files are done vs. still queued for the Real-World File Copy
+                                 test — only relevant (and only shown) while that test is selected. -->
+                            <Border Grid.Row="4" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"
+                                    CornerRadius="8" Padding="16" Margin="0,0,0,12"
+                                    Visibility="{Binding RealFileCopyTrack.IsSelected, Converter={StaticResource BoolToVisibility}}">
+                                <StackPanel>
+                                    <TextBlock Text="Real-World File Copy — Files" FontWeight="SemiBold" Margin="0,0,0,4"
+                                               Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                    <TextBlock Text="{Binding RealFileCopySpaceProgressText, Mode=OneWay}" FontSize="16" FontWeight="Bold" Margin="0,0,0,2"
+                                               Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                    <TextBlock FontSize="13" Margin="0,0,0,10" TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}">
+                                        <Run Text="{Binding RealFileCopyProgressCountText, Mode=OneWay}"/>
+                                        <Run Text=" — currently: "/><Run Text="{Binding RealFileCopyCurrentFileText, Mode=OneWay}" FontWeight="SemiBold"/>
+                                    </TextBlock>
+
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="16"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="RECENTLY COPIED" FontSize="11" FontWeight="SemiBold"
+                                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,4"/>
+                                            <ItemsControl ItemsSource="{Binding RealFileCopyRecentlyCompletedFiles}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding}" FontSize="12" TextTrimming="CharacterEllipsis"
+                                                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,0,0,2"/>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </StackPanel>
+
+                                        <StackPanel Grid.Column="2">
+                                            <TextBlock Text="UP NEXT" FontSize="11" FontWeight="SemiBold"
+                                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,4"/>
+                                            <ItemsControl ItemsSource="{Binding RealFileCopyUpNextFiles}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding}" FontSize="12" TextTrimming="CharacterEllipsis"
+                                                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,0,0,2"/>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </StackPanel>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
                         </Grid>
                     </ScrollViewer>
 

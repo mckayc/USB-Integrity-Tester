@@ -25,18 +25,24 @@ public sealed record UserSettings
 
     public bool RunCapacityTest { get; init; } = true;
     public bool RunSpeedTest { get; init; } = true;
-    public CapacityScanDepth CapacityScanDepth { get; init; } = CapacityScanDepth.Quick;
+    public CapacityScanDepth CapacityScanDepth { get; init; } = CapacityScanDepth.Full;
 
     public bool SpeedTestSlot1Enabled { get; init; } = true;
-    public SpeedTestCategory SpeedTestSlot1Category { get; init; } = SpeedTestCategory.Seq1MQ8T1;
+    public SpeedTestCategory SpeedTestSlot1Category { get; init; } = SpeedTestCategory.StandardBenchmark;
     public bool SpeedTestSlot2Enabled { get; init; } = true;
-    public SpeedTestCategory SpeedTestSlot2Category { get; init; } = SpeedTestCategory.Seq1MQ1T1;
+    public SpeedTestCategory SpeedTestSlot2Category { get; init; } = SpeedTestCategory.SmallFiles;
     public bool SpeedTestSlot3Enabled { get; init; } = true;
-    public SpeedTestCategory SpeedTestSlot3Category { get; init; } = SpeedTestCategory.Rnd4KQ32T1;
+    public SpeedTestCategory SpeedTestSlot3Category { get; init; } = SpeedTestCategory.MediumFiles;
     public bool SpeedTestSlot4Enabled { get; init; } = true;
-    public SpeedTestCategory SpeedTestSlot4Category { get; init; } = SpeedTestCategory.Rnd4KQ1T1;
+    public SpeedTestCategory SpeedTestSlot4Category { get; init; } = SpeedTestCategory.LargeFiles;
 
     public bool AutoAdvanceTests { get; init; } = true;
+
+    // Real-World File Copy folders are deliberately NOT persisted — a stale path from a previous
+    // session (folder moved/deleted, or just not what you want to test today) would be actively
+    // misleading restored silently. The delete-after-test preference is a stable choice, not tied
+    // to any particular folder, so that one's worth remembering.
+    public bool DeleteComputerCopyAfterTest { get; init; } = true;
 }
 
 /// <summary>Loads/saves <see cref="UserSettings"/> as indented, human-readable JSON (enums as

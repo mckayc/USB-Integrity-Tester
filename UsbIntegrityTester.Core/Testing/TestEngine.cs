@@ -10,6 +10,7 @@ public sealed record TestResult
     public SpeedTestSlotResult? Slot2 { get; init; }
     public SpeedTestSlotResult? Slot3 { get; init; }
     public SpeedTestSlotResult? Slot4 { get; init; }
+    public RealFileCopyResult? RealFileCopy { get; init; }
 }
 
 /// <summary>Orchestrates capacity verification and speed measurement against a raw physical drive.</summary>

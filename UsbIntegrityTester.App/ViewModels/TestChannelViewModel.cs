@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Windows.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 
@@ -44,6 +45,9 @@ public sealed partial class TestChannelViewModel : ObservableObject
     private double _sumMbps;
     private int _sampleCount;
 
+    private Stopwatch? _etaStopwatch;
+    private double? _etaSmoothedSeconds;
+
     public TestChannelViewModel(string label) => Label = label;
 
     public void ResetForRun(Brush neutralBrush, Brush neutralFillBrush)
@@ -69,6 +73,26 @@ public sealed partial class TestChannelViewModel : ObservableObject
         _peakMbps = 0;
         _sumMbps = 0;
         _sampleCount = 0;
+        _etaStopwatch = null;
+        _etaSmoothedSeconds = null;
+    }
+
+    /// <summary>Estimates remaining time for this channel's current phase from how long it's taken
+    /// to reach <paramref name="fractionComplete"/> so far — works regardless of whether that
+    /// fraction is byte-based or time-based underneath, since it only ever looks at elapsed
+    /// wall-clock time versus how far through the phase that got it. Returns null until there's
+    /// enough signal to be worth showing (a ratio taken in the first instant of a phase is mostly
+    /// noise), and smooths with an EMA since a raw elapsed/fraction ratio swings wildly early on.</summary>
+    public double? UpdateEtaSeconds(double fractionComplete)
+    {
+        _etaStopwatch ??= Stopwatch.StartNew();
+        if (fractionComplete <= 0.02) return null;
+
+        var rawRemainingSeconds = _etaStopwatch.Elapsed.TotalSeconds * (1 - fractionComplete) / fractionComplete;
+        _etaSmoothedSeconds = _etaSmoothedSeconds is { } prev
+            ? prev + (rawRemainingSeconds - prev) * 0.25
+            : rawRemainingSeconds;
+        return _etaSmoothedSeconds;
     }
 
     /// <summary>Applies an exponential moving average and records it toward peak/average, returning the value to display.</summary>

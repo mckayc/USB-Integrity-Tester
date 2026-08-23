@@ -58,6 +58,11 @@ public sealed record SpeedTestSlotReportRow
 
     public required string PracticalTimeText { get; init; }
 
+    /// <summary>Explains an early-fast/late-slow (or vice versa) pattern in this row's write or read
+    /// samples — e.g. an SLC write-cache filling up partway through — empty if neither channel showed
+    /// one. See MainViewModel's trend-blurb builder for the actual wording/reasoning.</summary>
+    public string TrendBlurb { get; init; } = string.Empty;
+
     public string WriteAvgText => ThroughputFormat.Format(WriteAvgMbps);
     public string WritePeakText => $"peak {ThroughputFormat.Format(WritePeakMbps)}";
     public string WriteClaimText => ClaimedWriteMbps is { } c and > 0 ? $"claimed {ThroughputFormat.Format(c)}" : string.Empty;
@@ -71,3 +76,58 @@ public sealed record SpeedTestSlotReportRow
 
 /// <summary>A simple labeled number for the report's expanded stats grid.</summary>
 public sealed record ReportStat(string Label, string Value);
+
+/// <summary>The optional Real-World File Copy test's report data — a "benchmark vs. real world"
+/// companion to the synthetic speed test rows above, using the user's own files instead of a
+/// simulated size range.</summary>
+public sealed record RealFileCopyReportSummary
+{
+    public required bool HasData { get; init; }
+    public required int FileCount { get; init; }
+    public required double TotalGb { get; init; }
+    public required string ExtensionBreakdownText { get; init; }
+
+    public required double WriteAvgMbps { get; init; }
+    public required double WritePeakMbps { get; init; }
+    public required TimeSpan WriteDuration { get; init; }
+
+    public required double ReadAvgMbps { get; init; }
+    public required double ReadPeakMbps { get; init; }
+    public required TimeSpan ReadDuration { get; init; }
+
+    public required int FilesVerifiedIdentical { get; init; }
+    public required IReadOnlyList<string> IssueMessages { get; init; }
+
+    /// <summary>Same "early vs. late" trend explanation as <see cref="SpeedTestSlotReportRow.TrendBlurb"/>, for the write and/or read pass.</summary>
+    public string TrendBlurb { get; init; } = string.Empty;
+
+    /// <summary>"Moving 5 GB worth of this would take..." translation, same reference amount used for
+    /// the synthetic categories — lets a real-world result be compared apples-to-apples against them.</summary>
+    public string PracticalTimeText { get; init; } = string.Empty;
+
+    public string HeadlineText => HasData ? $"{FileCount:N0} files, {TotalGb:N2} GB" : "Real-World File Copy test not run";
+    public string WriteAvgText => ThroughputFormat.Format(WriteAvgMbps);
+    public string WritePeakText => $"peak {ThroughputFormat.Format(WritePeakMbps)}";
+    public string ReadAvgText => ThroughputFormat.Format(ReadAvgMbps);
+    public string ReadPeakText => $"peak {ThroughputFormat.Format(ReadPeakMbps)}";
+    public string WriteDurationText => FormatDuration(WriteDuration);
+    public string ReadDurationText => FormatDuration(ReadDuration);
+
+    public bool AllVerified => HasData && IssueMessages.Count == 0 && FilesVerifiedIdentical == FileCount;
+    public string VerificationText => !HasData
+        ? string.Empty
+        : AllVerified
+            ? $"✓ All {FilesVerifiedIdentical:N0} files came back byte-for-byte identical after the round trip."
+            : $"⚠ {FileCount - FilesVerifiedIdentical:N0} of {FileCount:N0} file(s) did not come back identical — see details below.";
+
+    private static string FormatDuration(TimeSpan span) =>
+        span.TotalMinutes >= 1 ? $"{(int)span.TotalMinutes}m {span.Seconds}s" : $"{span.TotalSeconds:N0}s";
+
+    public static readonly RealFileCopyReportSummary Empty = new()
+    {
+        HasData = false, FileCount = 0, TotalGb = 0, ExtensionBreakdownText = string.Empty,
+        WriteAvgMbps = 0, WritePeakMbps = 0, WriteDuration = TimeSpan.Zero,
+        ReadAvgMbps = 0, ReadPeakMbps = 0, ReadDuration = TimeSpan.Zero,
+        FilesVerifiedIdentical = 0, IssueMessages = Array.Empty<string>(),
+    };
+}

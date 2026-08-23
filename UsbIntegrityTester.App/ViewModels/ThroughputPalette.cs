@@ -33,6 +33,9 @@ internal static class ThroughputPalette
     public static readonly Brush Slot4Neutral = Freeze(Color.FromRgb(0xE8, 0x43, 0x93));
     public static readonly Brush Slot4NeutralFill = Freeze(Color.FromArgb(0x40, 0xE8, 0x43, 0x93));
 
+    public static readonly Brush RealFileCopyNeutral = Freeze(Color.FromRgb(0xF1, 0xC4, 0x0F));
+    public static readonly Brush RealFileCopyNeutralFill = Freeze(Color.FromArgb(0x40, 0xF1, 0xC4, 0x0F));
+
     public static readonly Brush MissingCapacity = Freeze(Color.FromRgb(0x55, 0x55, 0x55));
 
     // A fixed identity color for every "Read"/"Verify" channel, regardless of which track it's

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using UsbIntegrityTester.Core.Reporting;
 using UsbIntegrityTester.Core.Verdict;
@@ -6,6 +7,7 @@ namespace UsbIntegrityTester.Core.History;
 
 public sealed record HistoryEntry
 {
+    public required long Id { get; init; }
     public required DateTime TimestampUtc { get; init; }
     public required string SerialNumber { get; init; }
     public required string DriveLabel { get; init; }
@@ -47,6 +49,18 @@ public sealed class DriveHistoryStore
             );
             """;
         command.ExecuteNonQuery();
+
+        // Added after the initial release — existing databases won't have this column yet, so add
+        // it if missing rather than requiring users to delete their history to pick up the update.
+        using var checkColumn = connection.CreateCommand();
+        checkColumn.CommandText = "SELECT COUNT(*) FROM pragma_table_info('TestRuns') WHERE name = 'ReportJson';";
+        var hasReportJson = (long)checkColumn.ExecuteScalar()! > 0;
+        if (!hasReportJson)
+        {
+            using var addColumn = connection.CreateCommand();
+            addColumn.CommandText = "ALTER TABLE TestRuns ADD COLUMN ReportJson TEXT;";
+            addColumn.ExecuteNonQuery();
+        }
     }
 
     public void Save(ReportModel report)
@@ -57,9 +71,9 @@ public sealed class DriveHistoryStore
         using var command = connection.CreateCommand();
         command.CommandText = """
             INSERT INTO TestRuns
-                (TimestampUtc, SerialNumber, DriveLabel, Verdict, ClaimedCapacityBytes, VerifiedGoodBytes, AverageWriteMegabytesPerSecond, AverageReadMegabytesPerSecond)
+                (TimestampUtc, SerialNumber, DriveLabel, Verdict, ClaimedCapacityBytes, VerifiedGoodBytes, AverageWriteMegabytesPerSecond, AverageReadMegabytesPerSecond, ReportJson)
             VALUES
-                ($timestamp, $serial, $label, $verdict, $claimedCapacity, $verifiedGoodBytes, $avgWrite, $avgRead);
+                ($timestamp, $serial, $label, $verdict, $claimedCapacity, $verifiedGoodBytes, $avgWrite, $avgRead, $reportJson);
             """;
 
         command.Parameters.AddWithValue("$timestamp", report.TimestampUtc.ToString("O"));
@@ -70,8 +84,23 @@ public sealed class DriveHistoryStore
         command.Parameters.AddWithValue("$verifiedGoodBytes", (object?)(long?)report.TestResult.Capacity?.VerifiedGoodBytes ?? DBNull.Value);
         command.Parameters.AddWithValue("$avgWrite", (object?)report.TestResult.Slot1?.Write.AverageMegabytesPerSecond ?? DBNull.Value);
         command.Parameters.AddWithValue("$avgRead", (object?)report.TestResult.Slot1?.Read.AverageMegabytesPerSecond ?? DBNull.Value);
+        command.Parameters.AddWithValue("$reportJson", JsonSerializer.Serialize(report));
 
         command.ExecuteNonQuery();
+    }
+
+    /// <summary>Fetches the full report saved alongside a history row, for re-viewing it on the Report page. Returns null for rows saved before report persistence was added.</summary>
+    public ReportModel? GetReport(long id)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT ReportJson FROM TestRuns WHERE Id = $id;";
+        command.Parameters.AddWithValue("$id", id);
+
+        var json = command.ExecuteScalar() as string;
+        return string.IsNullOrEmpty(json) ? null : JsonSerializer.Deserialize<ReportModel>(json);
     }
 
     public IReadOnlyList<HistoryEntry> GetAllHistory()
@@ -81,7 +110,7 @@ public sealed class DriveHistoryStore
 
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT TimestampUtc, SerialNumber, DriveLabel, Verdict, ClaimedCapacityBytes, VerifiedGoodBytes, AverageWriteMegabytesPerSecond, AverageReadMegabytesPerSecond
+            SELECT Id, TimestampUtc, SerialNumber, DriveLabel, Verdict, ClaimedCapacityBytes, VerifiedGoodBytes, AverageWriteMegabytesPerSecond, AverageReadMegabytesPerSecond
             FROM TestRuns
             ORDER BY TimestampUtc DESC;
             """;
@@ -96,7 +125,7 @@ public sealed class DriveHistoryStore
 
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT TimestampUtc, SerialNumber, DriveLabel, Verdict, ClaimedCapacityBytes, VerifiedGoodBytes, AverageWriteMegabytesPerSecond, AverageReadMegabytesPerSecond
+            SELECT Id, TimestampUtc, SerialNumber, DriveLabel, Verdict, ClaimedCapacityBytes, VerifiedGoodBytes, AverageWriteMegabytesPerSecond, AverageReadMegabytesPerSecond
             FROM TestRuns
             WHERE SerialNumber = $serial
             ORDER BY TimestampUtc DESC;
@@ -114,14 +143,15 @@ public sealed class DriveHistoryStore
         {
             results.Add(new HistoryEntry
             {
-                TimestampUtc = DateTime.Parse(reader.GetString(0)),
-                SerialNumber = reader.GetString(1),
-                DriveLabel = reader.GetString(2),
-                Verdict = Enum.Parse<DriveVerdict>(reader.GetString(3)),
-                ClaimedCapacityBytes = (ulong)reader.GetInt64(4),
-                VerifiedGoodBytes = reader.IsDBNull(5) ? null : (ulong)reader.GetInt64(5),
-                AverageWriteMegabytesPerSecond = reader.IsDBNull(6) ? null : reader.GetDouble(6),
-                AverageReadMegabytesPerSecond = reader.IsDBNull(7) ? null : reader.GetDouble(7),
+                Id = reader.GetInt64(0),
+                TimestampUtc = DateTime.Parse(reader.GetString(1)),
+                SerialNumber = reader.GetString(2),
+                DriveLabel = reader.GetString(3),
+                Verdict = Enum.Parse<DriveVerdict>(reader.GetString(4)),
+                ClaimedCapacityBytes = (ulong)reader.GetInt64(5),
+                VerifiedGoodBytes = reader.IsDBNull(6) ? null : (ulong)reader.GetInt64(6),
+                AverageWriteMegabytesPerSecond = reader.IsDBNull(7) ? null : reader.GetDouble(7),
+                AverageReadMegabytesPerSecond = reader.IsDBNull(8) ? null : reader.GetDouble(8),
             });
         }
 

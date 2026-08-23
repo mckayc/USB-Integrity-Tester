@@ -70,6 +70,10 @@
                     <Border Background="{DynamicResource ControlFillColorDefaultBrush}" CornerRadius="6" Padding="12,10">
                         <TextBlock Text="{Binding PracticalTimeText}" FontSize="13" TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                     </Border>
+
+                    <TextBlock Text="{Binding TrendBlurb}" FontSize="12" TextWrapping="Wrap" Margin="0,10,0,0"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                               Visibility="{Binding TrendBlurb, Converter={StaticResource EmptyStringToVisibilityConverter}}"/>
                 </StackPanel>
             </Border>
         </DataTemplate>
@@ -140,6 +144,64 @@
                     <!-- Speed tests: numbers plus practical transfer-time estimates -->
                     <TextBlock Text="Speed Tests" FontWeight="SemiBold" Margin="0,0,0,12" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                     <ItemsControl ItemsSource="{Binding SpeedTestRows}" Margin="0,0,0,8"/>
+
+                    <!-- Real-World File Copy: benchmark vs. real world, only shown when the test was run -->
+                    <StackPanel Visibility="{Binding RealFileCopySummary.HasData, Converter={StaticResource BoolToVisibility}}">
+                        <TextBlock Text="Real-World File Copy" FontWeight="SemiBold" Margin="0,0,0,8" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                        <Border Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"
+                                CornerRadius="8" Padding="16" Margin="0,0,0,20">
+                            <StackPanel>
+                                <TextBlock Text="{Binding RealFileCopySummary.HeadlineText}" FontSize="20" FontWeight="Bold" Margin="0,0,0,4"
+                                           Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                <TextBlock Text="{Binding RealFileCopySummary.ExtensionBreakdownText}" FontSize="12" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,0,0,12"/>
+
+                                <Grid Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="16"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="TO DRIVE" FontSize="11" FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,2"/>
+                                        <TextBlock Text="{Binding RealFileCopySummary.WriteAvgText}" FontSize="24" FontWeight="Bold"
+                                                   Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                        <TextBlock FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}">
+                                            <Run Text="{Binding RealFileCopySummary.WritePeakText, Mode=OneWay}"/>
+                                            <Run Text=" · took "/><Run Text="{Binding RealFileCopySummary.WriteDurationText, Mode=OneWay}"/>
+                                        </TextBlock>
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Column="2">
+                                        <TextBlock Text="BACK TO PC" FontSize="11" FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,2"/>
+                                        <TextBlock Text="{Binding RealFileCopySummary.ReadAvgText}" FontSize="24" FontWeight="Bold"
+                                                   Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                        <TextBlock FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}">
+                                            <Run Text="{Binding RealFileCopySummary.ReadPeakText, Mode=OneWay}"/>
+                                            <Run Text=" · took "/><Run Text="{Binding RealFileCopySummary.ReadDurationText, Mode=OneWay}"/>
+                                        </TextBlock>
+                                    </StackPanel>
+                                </Grid>
+
+                                <Border Background="{DynamicResource ControlFillColorDefaultBrush}" CornerRadius="6" Padding="12,10" Margin="0,0,0,10">
+                                    <TextBlock Text="{Binding RealFileCopySummary.VerificationText}" FontSize="13" TextWrapping="Wrap"
+                                               Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                </Border>
+
+                                <TextBlock Text="{Binding RealFileCopySummary.PracticalTimeText}" FontSize="13" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextFillColorPrimaryBrush}" Margin="0,0,0,10"
+                                           Visibility="{Binding RealFileCopySummary.PracticalTimeText, Converter={StaticResource EmptyStringToVisibilityConverter}}"/>
+
+                                <TextBlock Text="{Binding RealFileCopySummary.TrendBlurb}" FontSize="12" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                           Visibility="{Binding RealFileCopySummary.TrendBlurb, Converter={StaticResource EmptyStringToVisibilityConverter}}"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
 
                     <!-- Everything else, numerically -->
                     <TextBlock Text="Details" FontWeight="SemiBold" Margin="0,0,0,4" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>

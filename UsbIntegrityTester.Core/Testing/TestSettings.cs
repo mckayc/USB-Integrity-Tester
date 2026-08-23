@@ -32,7 +32,7 @@ public enum TestCleanupPolicy
     KeepUntilManual,
 }
 
-/// <summary>One of the speed test's 4 configurable slots — whether it runs, and which category it simulates (a real-world file-size range, or one of the CrystalDiskMark-replica benchmarks).</summary>
+/// <summary>One of the speed test's 4 configurable slots — whether it runs, and which real-world file-size category it simulates.</summary>
 public sealed record SpeedTestSlotSettings(bool Enabled, SpeedTestCategory Category);
 
 public sealed record TestSettings
@@ -49,16 +49,22 @@ public sealed record TestSettings
     public bool RunCapacityTest { get; init; } = true;
     public bool RunSpeedTest { get; init; } = true;
 
-    // Default to CrystalDiskMark's own 4-test suite (in its usual top-to-bottom order) so a run of
-    // this app's speed test is directly comparable to a CrystalDiskMark run on the same drive.
-    public SpeedTestSlotSettings SpeedTestSlot1 { get; init; } = new(true, SpeedTestCategory.Seq1MQ8T1);
-    public SpeedTestSlotSettings SpeedTestSlot2 { get; init; } = new(true, SpeedTestCategory.Seq1MQ1T1);
-    public SpeedTestSlotSettings SpeedTestSlot3 { get; init; } = new(true, SpeedTestCategory.Rnd4KQ32T1);
-    public SpeedTestSlotSettings SpeedTestSlot4 { get; init; } = new(true, SpeedTestCategory.Rnd4KQ1T1);
+    public SpeedTestSlotSettings SpeedTestSlot1 { get; init; } = new(true, SpeedTestCategory.StandardBenchmark);
+    public SpeedTestSlotSettings SpeedTestSlot2 { get; init; } = new(true, SpeedTestCategory.SmallFiles);
+    public SpeedTestSlotSettings SpeedTestSlot3 { get; init; } = new(true, SpeedTestCategory.MediumFiles);
+    public SpeedTestSlotSettings SpeedTestSlot4 { get; init; } = new(true, SpeedTestCategory.LargeFiles);
 
-    public CapacityScanDepth CapacityScanDepth { get; init; } = CapacityScanDepth.Quick;
+    public CapacityScanDepth CapacityScanDepth { get; init; } = CapacityScanDepth.Full;
     public int BlockSizeBytes { get; init; } = 1024 * 1024; // 1 MiB — capacity test's block granularity
     public int QuickScanSampleCount { get; init; } = 256;
     public double StandardScanSampleFraction { get; init; } = 0.05;
     public TimeSpan SustainedSpeedTestDuration { get; init; } = TimeSpan.FromSeconds(20);
+
+    /// <summary>File Mode only — copies a real folder of the user's own files to the drive and back,
+    /// verifying each by hash, as a "benchmark vs. real world" comparison alongside the synthetic
+    /// speed tests. Off by default since it needs the user to pick folders first.</summary>
+    public bool RunRealFileCopyTest { get; init; }
+    public string? RealFileCopySourceFolder { get; init; }
+    public string? RealFileCopyDestinationParentFolder { get; init; }
+    public bool DeleteComputerCopyAfterTest { get; init; } = true;
 }

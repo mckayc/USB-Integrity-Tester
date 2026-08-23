@@ -32,8 +32,6 @@ public partial class MainViewModel : ObservableObject
     // A timer flushes the latest sample to the UI on a fixed cadence instead, and an exponential
     // moving average smooths the displayed number so it doesn't jitter between flushes.
     private readonly DispatcherTimer _liveUpdateTimer;
-    private Stopwatch? _capacityStopwatch;
-    private double? _capacityEtaSmoothedSeconds;
     private Stopwatch? _overallTestStopwatch;
 
     public TestTrackViewModel CapacityTrack { get; } =
@@ -46,12 +44,16 @@ public partial class MainViewModel : ObservableObject
         new(SpeedTestCategoryOption.All[0].DisplayName, "Write", "Read", ThroughputPalette.Slot3Neutral, ThroughputPalette.Slot3NeutralFill);
     public TestTrackViewModel Slot4Track { get; } =
         new(SpeedTestCategoryOption.All[0].DisplayName, "Write", "Read", ThroughputPalette.Slot4Neutral, ThroughputPalette.Slot4NeutralFill);
+    public TestTrackViewModel RealFileCopyTrack { get; } =
+        new("Real-World File Copy", "To Drive", "Back to PC", ThroughputPalette.RealFileCopyNeutral, ThroughputPalette.RealFileCopyNeutralFill);
 
-    /// <summary>All five tracks in a fixed order — Capacity, then the 4 speed test slots — always.
-    /// Cards used to reorder to put whichever test was running at the top, but that meant the whole
-    /// layout reshuffled every time a test finished, which was disorienting; the accent border and
-    /// pulsing dot on the active card already say "this one's running" without moving anything.</summary>
-    public IReadOnlyList<TestTrackViewModel> AllTracks => new[] { CapacityTrack, Slot1Track, Slot2Track, Slot3Track, Slot4Track };
+    /// <summary>All six tracks in a fixed order — Capacity, then the 4 speed test slots, then the
+    /// optional Real-World File Copy — always. Cards used to reorder to put whichever test was
+    /// running at the top, but that meant the whole layout reshuffled every time a test finished,
+    /// which was disorienting; the accent border and pulsing dot on the active card already say
+    /// "this one's running" without moving anything.</summary>
+    public IReadOnlyList<TestTrackViewModel> AllTracks =>
+        new[] { CapacityTrack, Slot1Track, Slot2Track, Slot3Track, Slot4Track, RealFileCopyTrack };
 
     private readonly string _settingsFilePath;
 
@@ -102,6 +104,7 @@ public partial class MainViewModel : ObservableObject
         SpeedTestSlot4Category = s.SpeedTestSlot4Category;
 
         AutoAdvanceTests = s.AutoAdvanceTests;
+        DeleteComputerCopyAfterTest = s.DeleteComputerCopyAfterTest;
     }
 
     /// <summary>Called on clean app shutdown (see MainWindow's Closing handler) — persists whatever
@@ -132,6 +135,7 @@ public partial class MainViewModel : ObservableObject
             SpeedTestSlot4Category = SpeedTestSlot4Category,
 
             AutoAdvanceTests = AutoAdvanceTests,
+            DeleteComputerCopyAfterTest = DeleteComputerCopyAfterTest,
         };
 
         UserSettingsStore.Save(_settingsFilePath, settings);
@@ -223,7 +227,7 @@ public partial class MainViewModel : ObservableObject
 
     [ObservableProperty] private bool _runCapacityTest = true;
     [ObservableProperty] private bool _runSpeedTest = true;
-    [ObservableProperty] private CapacityScanDepth _capacityScanDepth = CapacityScanDepth.Quick;
+    [ObservableProperty] private CapacityScanDepth _capacityScanDepth = CapacityScanDepth.Full;
 
     /// <summary>Every category a speed test slot's dropdown can pick, for binding via SelectedValue/SelectedValuePath.</summary>
     public IReadOnlyList<SpeedTestCategoryOption> SpeedTestCategoryOptions => SpeedTestCategoryOption.All;
@@ -231,19 +235,19 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _speedTestSlot1Enabled = true;
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SpeedTestSlot1Info))]
-    private SpeedTestCategory _speedTestSlot1Category = SpeedTestCategory.Seq1MQ8T1;
+    private SpeedTestCategory _speedTestSlot1Category = SpeedTestCategory.StandardBenchmark;
     [ObservableProperty] private bool _speedTestSlot2Enabled = true;
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SpeedTestSlot2Info))]
-    private SpeedTestCategory _speedTestSlot2Category = SpeedTestCategory.Seq1MQ1T1;
+    private SpeedTestCategory _speedTestSlot2Category = SpeedTestCategory.SmallFiles;
     [ObservableProperty] private bool _speedTestSlot3Enabled = true;
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SpeedTestSlot3Info))]
-    private SpeedTestCategory _speedTestSlot3Category = SpeedTestCategory.Rnd4KQ32T1;
+    private SpeedTestCategory _speedTestSlot3Category = SpeedTestCategory.MediumFiles;
     [ObservableProperty] private bool _speedTestSlot4Enabled = true;
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SpeedTestSlot4Info))]
-    private SpeedTestCategory _speedTestSlot4Category = SpeedTestCategory.Rnd4KQ1T1;
+    private SpeedTestCategory _speedTestSlot4Category = SpeedTestCategory.LargeFiles;
 
     /// <summary>The selected category's full description/size-range, for the Setup tab's helper text under each dropdown.</summary>
     public SpeedTestCategoryOption SpeedTestSlot1Info => SpeedTestCategoryOption.All.First(o => o.Category == SpeedTestSlot1Category);
@@ -276,6 +280,136 @@ public partial class MainViewModel : ObservableObject
         Slot4Track.IsSelected = RunSpeedTest && SpeedTestSlot4Enabled;
         Slot4Track.Title = SpeedTestCategoryOption.All.First(o => o.Category == SpeedTestSlot4Category).DisplayName;
     }
+
+    // --- Real-World File Copy (optional) ---
+    // A "benchmark vs. real world" companion test: copies a user-chosen folder to the drive, then
+    // back to a folder on the computer, verifying every file by hash — real data, real elapsed
+    // time, instead of a synthetic size-range category. See RealFileCopyEngine's remarks for why it
+    // deliberately uses plain buffered I/O (matching the computer's own current settings) rather
+    // than the unbuffered approach the synthetic tests use.
+    [ObservableProperty] private bool _runRealFileCopyTest;
+    [ObservableProperty] private string _realFileCopySourceFolder = string.Empty;
+    [ObservableProperty] private string _realFileCopyDestinationParentFolder = string.Empty;
+    [ObservableProperty] private bool _deleteComputerCopyAfterTest = true;
+
+    // Live "which file is this actually on right now" state while the test runs — reconstructed
+    // from the file index the engine reports plus the file list already known from scanning the
+    // folder when it was picked, rather than the engine having to ship the whole list every tick.
+    [ObservableProperty] private string _realFileCopyCurrentFileText = string.Empty;
+    [ObservableProperty] private string _realFileCopyProgressCountText = string.Empty;
+    [ObservableProperty] private string _realFileCopySpaceProgressText = string.Empty;
+    public ObservableCollection<string> RealFileCopyRecentlyCompletedFiles { get; } = new();
+    public ObservableCollection<string> RealFileCopyUpNextFiles { get; } = new();
+
+    [ObservableProperty] private bool _isScanningRealFileCopySource;
+    [ObservableProperty] private string _realFileCopyScanSummaryText = "No folder selected.";
+    [ObservableProperty] private string _realFileCopyExtensionBreakdownText = string.Empty;
+
+    /// <summary>Non-empty when the selected folder won't fit on the drive or at the computer
+    /// destination — checked the moment a folder is picked, not left to fail mid-copy.</summary>
+    [ObservableProperty] private string _realFileCopySpaceWarningText = string.Empty;
+
+    private RealFileCopyScanResult? _realFileCopyLastScan;
+
+    partial void OnRunRealFileCopyTestChanged(bool value) => RealFileCopyTrack.IsSelected = value;
+    partial void OnRealFileCopySourceFolderChanged(string value) => _ = RescanRealFileCopySourceAsync();
+    partial void OnRealFileCopyDestinationParentFolderChanged(string value) => UpdateRealFileCopySpaceWarning();
+
+    [RelayCommand]
+    private void BrowseRealFileCopySourceFolder()
+    {
+        var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "Choose a folder to copy to the drive" };
+        if (dialog.ShowDialog() == true) RealFileCopySourceFolder = dialog.FolderName;
+    }
+
+    [RelayCommand]
+    private void BrowseRealFileCopyDestinationFolder()
+    {
+        var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "Choose where to copy the files back to on this computer" };
+        if (dialog.ShowDialog() == true) RealFileCopyDestinationParentFolder = dialog.FolderName;
+    }
+
+    private async Task RescanRealFileCopySourceAsync()
+    {
+        if (string.IsNullOrWhiteSpace(RealFileCopySourceFolder))
+        {
+            _realFileCopyLastScan = null;
+            RealFileCopyScanSummaryText = "No folder selected.";
+            RealFileCopyExtensionBreakdownText = string.Empty;
+            RealFileCopySpaceWarningText = string.Empty;
+            return;
+        }
+
+        IsScanningRealFileCopySource = true;
+        RealFileCopyScanSummaryText = "Scanning…";
+        RealFileCopyExtensionBreakdownText = string.Empty;
+
+        try
+        {
+            var folder = RealFileCopySourceFolder;
+            var scan = await Task.Run(() => RealFileCopyScanner.Scan(folder, CancellationToken.None));
+            _realFileCopyLastScan = scan;
+
+            var sizeGb = scan.TotalBytes / 1_000_000_000.0;
+            var skippedNote = scan.SkippedPaths.Count > 0
+                ? $" ({scan.SkippedPaths.Count} item(s) skipped — in use or access denied)"
+                : string.Empty;
+            RealFileCopyScanSummaryText = scan.FileCount == 0
+                ? "No files found in this folder."
+                : $"{scan.FileCount:N0} files, {sizeGb:N2} GB{skippedNote}";
+
+            RealFileCopyExtensionBreakdownText = string.Join("  •  ", scan.ExtensionBreakdown.Take(8)
+                .Select(e => $"{e.FileCount} .{e.Extension} ({e.TotalBytes / 1_000_000.0:N0} MB)"));
+
+            UpdateRealFileCopySpaceWarning();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _realFileCopyLastScan = null;
+            RealFileCopyScanSummaryText = $"Couldn't scan this folder: {ex.Message}";
+        }
+        finally
+        {
+            IsScanningRealFileCopySource = false;
+        }
+    }
+
+    private void UpdateRealFileCopySpaceWarning()
+    {
+        if (_realFileCopyLastScan is not { } scan || scan.FileCount == 0)
+        {
+            RealFileCopySpaceWarningText = string.Empty;
+            return;
+        }
+
+        var warnings = new List<string>();
+
+        if (SelectedDrive is { } drive && drive.AvailableFreeBytes > 0 && scan.TotalBytes > (long)drive.AvailableFreeBytes)
+        {
+            warnings.Add($"Selected folder ({scan.TotalBytes / 1_000_000_000.0:N2} GB) is larger than the drive's free space ({drive.AvailableFreeBytes / 1_000_000_000.0:N2} GB).");
+        }
+
+        if (!string.IsNullOrWhiteSpace(RealFileCopyDestinationParentFolder))
+        {
+            try
+            {
+                var destRoot = Path.GetPathRoot(RealFileCopyDestinationParentFolder);
+                if (!string.IsNullOrEmpty(destRoot))
+                {
+                    var destDriveInfo = new System.IO.DriveInfo(destRoot);
+                    if (scan.TotalBytes > destDriveInfo.AvailableFreeSpace)
+                        warnings.Add($"Selected folder ({scan.TotalBytes / 1_000_000_000.0:N2} GB) is larger than the free space where the round-tripped copy would go ({destDriveInfo.AvailableFreeSpace / 1_000_000_000.0:N2} GB).");
+                }
+            }
+            catch (Exception ex) when (ex is IOException or ArgumentException)
+            {
+                // Can't determine free space for that path — not fatal, just skip this particular warning.
+            }
+        }
+
+        RealFileCopySpaceWarningText = string.Join(" ", warnings);
+    }
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ProgressPercent))]
     private double _progressFraction;
@@ -331,6 +465,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private ReportCapacitySummary _capacitySummary = ReportCapacitySummary.Empty;
     [ObservableProperty] private ObservableCollection<SpeedTestSlotReportRow> _speedTestRows = new();
     [ObservableProperty] private ObservableCollection<ReportStat> _extraStats = new();
+    [ObservableProperty] private RealFileCopyReportSummary _realFileCopySummary = RealFileCopyReportSummary.Empty;
 
     public ObservableCollection<LogEntry> Logs => AppLog.Entries;
 
@@ -349,6 +484,60 @@ public partial class MainViewModel : ObservableObject
         catch (Exception ex)
         {
             AppLog.Error($"RefreshHistory failed: {ex}");
+        }
+    }
+
+    /// <summary>Fired when a history row's saved report should be shown — MainWindow subscribes and switches the active page to Report.</summary>
+    public event Action? NavigateToReportRequested;
+
+    [RelayCommand]
+    private void LoadReport(HistoryEntry entry)
+    {
+        ReportModel? report;
+        try
+        {
+            report = _historyStore.GetReport(entry.Id);
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error($"LoadReport failed: {ex}");
+            return;
+        }
+
+        if (report is null)
+        {
+            AppLog.Warning($"No saved report data for the {entry.TimestampUtc:yyyy-MM-dd HH:mm} run on \"{entry.DriveLabel}\" — it predates report history.");
+            return;
+        }
+
+        LastReport = report;
+        VerdictText = VerdictHeadline(report.Verdict.Verdict);
+        VerdictExplanationText = report.Verdict.Explanation;
+        BuildReportVisuals(report);
+        NavigateToReportRequested?.Invoke();
+    }
+
+    [RelayCommand]
+    private void ExportHistoryToCsv()
+    {
+        if (HistoryEntries.Count == 0) return;
+
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Filter = "CSV file (*.csv)|*.csv",
+            FileName = $"usb-integrity-history-{DateTime.Now:yyyyMMdd-HHmmss}.csv",
+        };
+
+        if (dialog.ShowDialog() != true) return;
+
+        try
+        {
+            ReportExporter.WriteHistoryCsv(HistoryEntries, dialog.FileName);
+            AppLog.Info($"History exported to \"{dialog.FileName}\".");
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error($"ExportHistoryToCsv failed: {ex}");
         }
     }
 
@@ -498,6 +687,7 @@ public partial class MainViewModel : ObservableObject
         TestPhase.MeasuringSpeedTestSlot2WriteSpeed or TestPhase.MeasuringSpeedTestSlot2ReadSpeed => Slot2Track,
         TestPhase.MeasuringSpeedTestSlot3WriteSpeed or TestPhase.MeasuringSpeedTestSlot3ReadSpeed => Slot3Track,
         TestPhase.MeasuringSpeedTestSlot4WriteSpeed or TestPhase.MeasuringSpeedTestSlot4ReadSpeed => Slot4Track,
+        TestPhase.CopyingRealFilesToUsb or TestPhase.CopyingAndVerifyingRealFilesFromUsb => RealFileCopyTrack,
         _ => null,
     };
 
@@ -509,13 +699,16 @@ public partial class MainViewModel : ObservableObject
             or TestPhase.MeasuringSpeedTestSlot3WriteSpeed or TestPhase.MeasuringSpeedTestSlot4WriteSpeed => "Writing…",
         TestPhase.MeasuringSpeedTestSlot1ReadSpeed or TestPhase.MeasuringSpeedTestSlot2ReadSpeed
             or TestPhase.MeasuringSpeedTestSlot3ReadSpeed or TestPhase.MeasuringSpeedTestSlot4ReadSpeed => "Reading…",
+        TestPhase.CopyingRealFilesToUsb => "Copying to drive…",
+        TestPhase.CopyingAndVerifyingRealFilesFromUsb => "Copying back and verifying…",
         _ => string.Empty,
     };
 
     /// <summary>Every tracked phase is either the "Write" half (WritingCapacityPattern or a *Write* speed phase) or the "Read"/"Verify" half.</summary>
     private static bool IsPrimaryChannelPhase(TestPhase phase) => phase is TestPhase.WritingCapacityPattern
         or TestPhase.MeasuringSpeedTestSlot1WriteSpeed or TestPhase.MeasuringSpeedTestSlot2WriteSpeed
-        or TestPhase.MeasuringSpeedTestSlot3WriteSpeed or TestPhase.MeasuringSpeedTestSlot4WriteSpeed;
+        or TestPhase.MeasuringSpeedTestSlot3WriteSpeed or TestPhase.MeasuringSpeedTestSlot4WriteSpeed
+        or TestPhase.CopyingRealFilesToUsb;
 
     private void FlushLiveProgress()
     {
@@ -544,18 +737,12 @@ public partial class MainViewModel : ObservableObject
         if (track.LastPhase != p.Phase)
         {
             track.LastPhase = p.Phase;
+            // Write and verify/read usually run at noticeably different speeds (verify is a pure
+            // read; write includes filesystem/controller overhead write doesn't), so this resets
+            // the channel's smoothing *and* its ETA clock — otherwise the estimate right after this
+            // handoff is still dragged around by the *other* pass's rate until enough of the new
+            // pass elapses to outweigh it.
             channel.ResetSmoothing();
-
-            // Write and verify usually run at noticeably different speeds (verify is a pure read;
-            // write includes filesystem/controller overhead write doesn't), so the ETA's own clock
-            // and smoothing reset here too — otherwise the estimate right after this handoff is
-            // still dragged around by the *other* pass's rate until enough of the new pass elapses
-            // to outweigh it.
-            if (track == CapacityTrack)
-            {
-                _capacityStopwatch = null;
-                _capacityEtaSmoothedSeconds = null;
-            }
         }
 
         if (track == CapacityTrack)
@@ -569,6 +756,26 @@ public partial class MainViewModel : ObservableObject
             // one's own FractionComplete is already scoped to just that sub-phase.
             channel.ProgressFraction = p.FractionComplete;
             track.ProgressFraction = ((isPrimaryChannel ? 0 : 1) + p.FractionComplete) / 2;
+
+            // Works for any phase regardless of whether FractionComplete underneath is time-based
+            // (the synthetic speed tests) or byte-based (Real-World File Copy) — either way it's a
+            // valid 0..1 progress signal to clock elapsed-time-so-far against.
+            var etaSeconds = channel.UpdateEtaSeconds(p.FractionComplete);
+            var etaText = etaSeconds is { } s ? FormatEta(s) : string.Empty;
+
+            if (track == RealFileCopyTrack)
+            {
+                UpdateRealFileCopyFileState(channel, p, etaText);
+            }
+            else
+            {
+                channel.DetailText = etaText;
+                // Shown next to the card title (e.g. "Large Files — Estimated time remaining: 2m 30s")
+                // so the estimate is visible at a glance, not just tucked under one channel's numbers.
+                track.StatusText = etaSeconds is { } remaining
+                    ? $"Estimated time remaining: {FormatEtaDuration(remaining)}"
+                    : SubPhaseStatusText(p.Phase);
+            }
         }
 
         if (p.CurrentThroughputMegabytesPerSecond is { } mbps)
@@ -579,8 +786,13 @@ public partial class MainViewModel : ObservableObject
             channel.PeakThroughputText = $"Peak {channel.PeakMbps:N1} MB/s";
             channel.AverageThroughputText = $"Avg {channel.AverageMbps:N1} MB/s";
 
+            // Keep every sample for the whole run — Sparkline itself fits the full series to
+            // whatever width it has (and evenly downsamples long series for rendering), so a
+            // rolling window here would only throw away real history for no benefit. Previously
+            // capped at 150 points, which for a long-running test (a sustained speed test, or
+            // especially a multi-hour Real-World File Copy) meant the graph only ever showed the
+            // last ~37 seconds and silently dropped everything before that.
             channel.LivePoints.Add(displayMbps);
-            if (channel.LivePoints.Count > 150) channel.LivePoints.RemoveAt(0);
 
             // Whether this channel is meeting its claim is shown as a small badge, not by
             // recoloring the line itself — the line's color is that channel's fixed identity
@@ -606,8 +818,6 @@ public partial class MainViewModel : ObservableObject
 
         if (track == CapacityTrack && p.Phase is TestPhase.WritingCapacityPattern or TestPhase.VerifyingCapacityPattern)
         {
-            _capacityStopwatch ??= Stopwatch.StartNew();
-
             var isWriting = p.Phase == TestPhase.WritingCapacityPattern;
             var totalPhaseBytes = p.TotalBytes / 2;
             var phaseBytesDone = isWriting
@@ -620,19 +830,10 @@ public partial class MainViewModel : ObservableObject
             // nicely as this track's overall (write + verify) progress.
             track.ProgressFraction = p.FractionComplete;
 
-            var etaText = string.Empty;
-            if (phaseFraction > 0.02) // wait for a little real signal — a ratio this early is mostly noise
-            {
-                // Uses only THIS pass's own elapsed time and fraction — not the combined
-                // write+verify fraction — so a fast write pass doesn't drag out verify's estimate
-                // or vice versa. Smoothed with an EMA since a raw elapsed/fraction ratio swings
-                // wildly block-to-block, especially in the first second of a freshly-reset phase.
-                var rawRemainingSeconds = _capacityStopwatch.Elapsed.TotalSeconds * (1 - phaseFraction) / phaseFraction;
-                _capacityEtaSmoothedSeconds = _capacityEtaSmoothedSeconds is { } prevEta
-                    ? prevEta + (rawRemainingSeconds - prevEta) * 0.25
-                    : rawRemainingSeconds;
-                etaText = FormatEta(_capacityEtaSmoothedSeconds.Value);
-            }
+            // Uses only THIS pass's own elapsed time and fraction — not the combined write+verify
+            // fraction — so a fast write pass doesn't drag out verify's estimate or vice versa.
+            var etaSeconds = channel.UpdateEtaSeconds(phaseFraction);
+            var etaText = etaSeconds is { } s ? FormatEta(s) : string.Empty;
 
             channel.DetailText = $"{phaseBytesDone / 1_000_000_000.0:N2} GB of {totalPhaseBytes / 1_000_000_000.0:N2} GB {(isWriting ? "written" : "verified")}"
                 + (string.IsNullOrEmpty(etaText) ? "" : $" — {etaText}");
@@ -642,6 +843,39 @@ public partial class MainViewModel : ObservableObject
         }
 
         ProgressText = $"{CurrentPhaseLabel} — {channel.CurrentThroughputText}";
+    }
+
+    /// <summary>Reconstructs "which file is this on, what's already done, what's coming up" purely
+    /// from the file index the engine reports plus the folder scan already done client-side when
+    /// the source folder was picked — the engine only needs to report an index, not ship the whole
+    /// file list on every progress tick.</summary>
+    private void UpdateRealFileCopyFileState(TestChannelViewModel channel, TestProgress p, string etaText)
+    {
+        const int previewCount = 10;
+        var totalFiles = _realFileCopyLastScan?.FileCount ?? 0;
+
+        if (p.CurrentFileIndex is not { } index || p.CurrentFileRelativePath is not { } currentPath)
+        {
+            channel.DetailText = etaText;
+            return;
+        }
+
+        RealFileCopyCurrentFileText = currentPath;
+        RealFileCopyProgressCountText = totalFiles > 0 ? $"File {index + 1} of {totalFiles:N0}" : $"File {index + 1}";
+        RealFileCopySpaceProgressText = $"{p.BytesProcessed / 1_000_000_000.0:N2} GB of {p.TotalBytes / 1_000_000_000.0:N2} GB copied";
+        channel.DetailText = $"{RealFileCopySpaceProgressText} — {RealFileCopyProgressCountText}"
+            + (string.IsNullOrEmpty(etaText) ? "" : $" — {etaText}");
+
+        if (_realFileCopyLastScan is { } scan)
+        {
+            RealFileCopyRecentlyCompletedFiles.Clear();
+            foreach (var f in scan.Files.Take(index).Select(f => f.RelativePath).Reverse().Take(previewCount))
+                RealFileCopyRecentlyCompletedFiles.Add(f);
+
+            RealFileCopyUpNextFiles.Clear();
+            foreach (var f in scan.Files.Skip(index + 1).Take(previewCount).Select(f => f.RelativePath))
+                RealFileCopyUpNextFiles.Add(f);
+        }
     }
 
     private void UpdateOverallProgress()
@@ -660,13 +894,19 @@ public partial class MainViewModel : ObservableObject
 
     private static string FormatEta(double remainingSeconds)
     {
+        var duration = FormatEtaDuration(remainingSeconds);
+        return duration.Length == 0 ? string.Empty : $"~{duration} remaining";
+    }
+
+    private static string FormatEtaDuration(double remainingSeconds)
+    {
         if (double.IsNaN(remainingSeconds) || double.IsInfinity(remainingSeconds) || remainingSeconds < 0)
             return string.Empty;
 
         var span = TimeSpan.FromSeconds(remainingSeconds);
-        if (span.TotalHours >= 1) return $"~{(int)span.TotalHours}h {span.Minutes}m remaining";
-        if (span.TotalMinutes >= 1) return $"~{(int)span.TotalMinutes}m {span.Seconds}s remaining";
-        return $"~{Math.Max(1, span.Seconds)}s remaining";
+        if (span.TotalHours >= 1) return $"{(int)span.TotalHours}h {span.Minutes}m";
+        if (span.TotalMinutes >= 1) return $"{(int)span.TotalMinutes}m {span.Seconds}s";
+        return $"{Math.Max(1, span.Seconds)}s";
     }
 
     private string PhaseLabel(TestPhase phase) => phase switch
@@ -675,11 +915,12 @@ public partial class MainViewModel : ObservableObject
         TestPhase.VerifyingCapacityPattern => "Reading each block back to confirm it holds its own data, not a copy",
         TestPhase.MeasuringSpeedTestSlot1WriteSpeed or TestPhase.MeasuringSpeedTestSlot2WriteSpeed
             or TestPhase.MeasuringSpeedTestSlot3WriteSpeed or TestPhase.MeasuringSpeedTestSlot4WriteSpeed
-            => $"Writing — {TrackForPhase(phase)?.Title ?? "speed test"}",
+            => $"Writing randomly-sized {TrackForPhase(phase)?.Title ?? "files"} — simulates copying files like this to the drive",
         TestPhase.MeasuringSpeedTestSlot1ReadSpeed or TestPhase.MeasuringSpeedTestSlot2ReadSpeed
             or TestPhase.MeasuringSpeedTestSlot3ReadSpeed or TestPhase.MeasuringSpeedTestSlot4ReadSpeed
-            => $"Reading — {TrackForPhase(phase)?.Title ?? "speed test"}",
-        TestPhase.FlushingSpeedTestCache => "Writing throwaway data so the read tests above don't come back from the drive's own cache",
+            => $"Reading randomly-sized {TrackForPhase(phase)?.Title ?? "files"} — simulates copying files like this from the drive",
+        TestPhase.CopyingRealFilesToUsb => "Copying your selected folder to the drive",
+        TestPhase.CopyingAndVerifyingRealFilesFromUsb => "Copying those files back to the computer and verifying each one against the original",
         TestPhase.Complete => "Complete",
         _ => phase.ToString(),
     };
@@ -768,8 +1009,26 @@ public partial class MainViewModel : ObservableObject
             sb.AppendLine($"    Write: {row.WriteAvgText} ({row.WritePeakText}{(string.IsNullOrEmpty(row.WriteClaimText) ? "" : $", {row.WriteClaimText}")})");
             sb.AppendLine($"    Read:  {row.ReadAvgText} ({row.ReadPeakText}{(string.IsNullOrEmpty(row.ReadClaimText) ? "" : $", {row.ReadClaimText}")})");
             sb.AppendLine($"    {row.PracticalTimeText}");
+            if (!string.IsNullOrEmpty(row.TrendBlurb))
+                sb.AppendLine($"    {row.TrendBlurb}");
         }
         sb.AppendLine();
+
+        if (RealFileCopySummary.HasData)
+        {
+            sb.AppendLine("Real-World File Copy (benchmark vs. real world)");
+            sb.AppendLine($"  {RealFileCopySummary.HeadlineText}");
+            if (!string.IsNullOrEmpty(RealFileCopySummary.ExtensionBreakdownText))
+                sb.AppendLine($"  {RealFileCopySummary.ExtensionBreakdownText}");
+            sb.AppendLine($"  Write to drive: {RealFileCopySummary.WriteAvgText} ({RealFileCopySummary.WritePeakText}) — took {RealFileCopySummary.WriteDurationText}");
+            sb.AppendLine($"  Read back to computer: {RealFileCopySummary.ReadAvgText} ({RealFileCopySummary.ReadPeakText}) — took {RealFileCopySummary.ReadDurationText}");
+            sb.AppendLine($"  {RealFileCopySummary.VerificationText}");
+            if (!string.IsNullOrEmpty(RealFileCopySummary.PracticalTimeText))
+                sb.AppendLine($"  {RealFileCopySummary.PracticalTimeText}");
+            if (!string.IsNullOrEmpty(RealFileCopySummary.TrendBlurb))
+                sb.AppendLine($"  {RealFileCopySummary.TrendBlurb}");
+            sb.AppendLine();
+        }
 
         sb.AppendLine("Details");
         sb.AppendLine($"  Serial Number: {report.SerialNumber}");
@@ -818,16 +1077,24 @@ public partial class MainViewModel : ObservableObject
             SpeedTestSlot3 = new SpeedTestSlotSettings(SpeedTestSlot3Enabled, SpeedTestSlot3Category),
             SpeedTestSlot4 = new SpeedTestSlotSettings(SpeedTestSlot4Enabled, SpeedTestSlot4Category),
             CapacityScanDepth = CapacityScanDepth,
+            RunRealFileCopyTest = RunRealFileCopyTest,
+            RealFileCopySourceFolder = RealFileCopySourceFolder,
+            RealFileCopyDestinationParentFolder = RealFileCopyDestinationParentFolder,
+            DeleteComputerCopyAfterTest = DeleteComputerCopyAfterTest,
         };
 
         CapacityTrack.IsSelected = RunCapacityTest;
         SyncSpeedTrackSelection();
         foreach (var track in AllTracks) track.ResetForRun();
 
+        RealFileCopyCurrentFileText = string.Empty;
+        RealFileCopyProgressCountText = string.Empty;
+        RealFileCopySpaceProgressText = string.Empty;
+        RealFileCopyRecentlyCompletedFiles.Clear();
+        RealFileCopyUpNextFiles.Clear();
+
         CurrentPhaseLabel = "Starting…";
         _lastReportedBlocksFailed = 0;
-        _capacityStopwatch = null;
-        _capacityEtaSmoothedSeconds = null;
         _overallTestStopwatch = Stopwatch.StartNew();
         _nextTestGate = null;
         IsWaitingForNextTest = false;
@@ -892,8 +1159,21 @@ public partial class MainViewModel : ObservableObject
             }
         }
 
+        if (result.RealFileCopy is { } realFileCopyResult && DeleteComputerCopyAfterTest)
+        {
+            try
+            {
+                await Task.Run(() => Directory.Delete(realFileCopyResult.ComputerCopyFolder, recursive: true), CancellationToken.None);
+                AppLog.Info($"Deleted the round-tripped copy at {realFileCopyResult.ComputerCopyFolder}.");
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                AppLog.Warning($"Couldn't delete the round-tripped copy at {realFileCopyResult.ComputerCopyFolder}: {ex.Message}");
+            }
+        }
+
         var verdict = FraudDetector.Evaluate(
-            claimedCapacityBytes, ClaimedReadSpeedMegabytesPerSecond, ClaimedWriteSpeedMegabytesPerSecond, result);
+            claimedCapacityBytes, ClaimedReadSpeedMegabytesPerSecond, ClaimedWriteSpeedMegabytesPerSecond, result, drive.Model);
 
         UsbLinkSpeed? negotiatedLinkSpeed;
         if (EffectiveLinkSpeed is { } overrideSpeed)
@@ -947,6 +1227,45 @@ public partial class MainViewModel : ObservableObject
         BuildCapacitySummary(report);
         BuildSpeedTestRows(report);
         BuildExtraStats(report);
+        BuildRealFileCopySummary(report);
+    }
+
+    private void BuildRealFileCopySummary(ReportModel report)
+    {
+        var copy = report.TestResult.RealFileCopy;
+        if (copy is null)
+        {
+            RealFileCopySummary = RealFileCopyReportSummary.Empty;
+            return;
+        }
+
+        var breakdownText = string.Join("  •  ", copy.ExtensionBreakdown.Take(8)
+            .Select(e => $"{e.FileCount} .{e.Extension} ({e.TotalBytes / 1_000_000.0:N0} MB)"));
+
+        var writeSeconds = copy.WriteAverageMegabytesPerSecond > 0 ? PracticalTransferGb * 1000 / copy.WriteAverageMegabytesPerSecond : 0;
+        var readSeconds = copy.ReadAverageMegabytesPerSecond > 0 ? PracticalTransferGb * 1000 / copy.ReadAverageMegabytesPerSecond : 0;
+        var practicalText = writeSeconds > 0 && readSeconds > 0
+            ? $"At these measured speeds, moving {PracticalTransferGb:N0} GB — the same reference amount used for the synthetic categories "
+                + $"above — would take about {FormatPracticalDuration(writeSeconds)} to copy TO this drive, and about {FormatPracticalDuration(readSeconds)} to copy FROM it back to a computer."
+            : string.Empty;
+
+        RealFileCopySummary = new RealFileCopyReportSummary
+        {
+            HasData = true,
+            FileCount = copy.FilesCopied,
+            TotalGb = copy.TotalBytes / 1_000_000_000.0,
+            ExtensionBreakdownText = breakdownText,
+            WriteAvgMbps = copy.WriteAverageMegabytesPerSecond,
+            WritePeakMbps = copy.WritePeakMegabytesPerSecond,
+            WriteDuration = copy.WriteToUsbDuration,
+            ReadAvgMbps = copy.ReadAverageMegabytesPerSecond,
+            ReadPeakMbps = copy.ReadPeakMegabytesPerSecond,
+            ReadDuration = copy.ReadFromUsbDuration,
+            FilesVerifiedIdentical = copy.FilesVerifiedIdentical,
+            IssueMessages = copy.Issues.Select(i => $"{i.RelativePath}: {i.Message}").ToList(),
+            TrendBlurb = BuildTrendBlurb(copy.WriteSamples, copy.ReadSamples),
+            PracticalTimeText = practicalText,
+        };
     }
 
     private void BuildCapacitySummary(ReportModel report)
@@ -1007,6 +1326,7 @@ public partial class MainViewModel : ObservableObject
                 ReadPeakMbps = slot.Read.PeakBurstMegabytesPerSecond,
                 ClaimedReadMbps = report.ClaimedReadSpeedMegabytesPerSecond,
                 PracticalTimeText = practicalText,
+                TrendBlurb = BuildTrendBlurb(slot.Write.SampledMegabytesPerSecond, slot.Read.SampledMegabytesPerSecond),
             });
         }
 
@@ -1025,6 +1345,42 @@ public partial class MainViewModel : ObservableObject
         if (span.TotalHours >= 1) return $"{span.TotalHours:N1} hours";
         if (span.TotalMinutes >= 1) return $"{span.TotalMinutes:N1} minutes";
         return $"{Math.Max(1, span.Seconds)} seconds";
+    }
+
+    /// <summary>Looks for an early-fast/late-slow (or the reverse) pattern in a test's write and read
+    /// samples and, if found, explains the most likely mechanism — e.g. a flash drive's onboard write
+    /// cache filling up partway through a large sustained write. Reads don't get the same explanation
+    /// since they don't benefit from a write cache the same way, so a declining read trend points at
+    /// something else (thermal throttling, a full/fragmented drive, USB bus contention).</summary>
+    private static string BuildTrendBlurb(IReadOnlyList<double> writeSamples, IReadOnlyList<double> readSamples)
+    {
+        var writeTrend = ThroughputTrendAnalyzer.Analyze(writeSamples);
+        var readTrend = ThroughputTrendAnalyzer.Analyze(readSamples);
+
+        var parts = new List<string>();
+
+        if (writeTrend.Trend == ThroughputTrend.Declining)
+            parts.Add($"Write speed started around {writeTrend.EarlyAverageMegabytesPerSecond:N0} MB/s and settled down to about " +
+                $"{writeTrend.LateAverageMegabytesPerSecond:N0} MB/s for the rest of the test. This is a common pattern on flash drives " +
+                "with a fast onboard write cache (often called an SLC cache): the controller can absorb writes very quickly into that " +
+                "cache at first, but once it fills up it has to write directly to the slower underlying flash, and speed drops and stays " +
+                "down for the remainder. It's a property of the drive's own controller, not a problem with the test — and it's exactly " +
+                "why a \"peak\" number alone can be misleading for any transfer bigger than the cache can hold.");
+        else if (writeTrend.Trend == ThroughputTrend.Improving)
+            parts.Add($"Write speed started around {writeTrend.EarlyAverageMegabytesPerSecond:N0} MB/s and rose to about " +
+                $"{writeTrend.LateAverageMegabytesPerSecond:N0} MB/s later in the test — less common, but can happen if the drive was " +
+                "still settling in (thermal warm-up, background garbage collection catching up) early on.");
+
+        if (readTrend.Trend == ThroughputTrend.Declining)
+            parts.Add($"Read speed also dropped, from about {readTrend.EarlyAverageMegabytesPerSecond:N0} MB/s to about " +
+                $"{readTrend.LateAverageMegabytesPerSecond:N0} MB/s. Reads don't typically benefit from a write cache the way writes do, " +
+                "so a declining read trend more likely points at thermal throttling, a full or fragmented drive, or something else " +
+                "competing for the same USB controller during the test.");
+        else if (readTrend.Trend == ThroughputTrend.Improving)
+            parts.Add($"Read speed rose from about {readTrend.EarlyAverageMegabytesPerSecond:N0} MB/s to about " +
+                $"{readTrend.LateAverageMegabytesPerSecond:N0} MB/s over the course of the test.");
+
+        return string.Join(" ", parts);
     }
 
     private void BuildExtraStats(ReportModel report)

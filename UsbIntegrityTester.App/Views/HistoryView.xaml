@@ -14,9 +14,14 @@
             </Border>
             <TextBlock Text="History" FontSize="22" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,16,0"
                        Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
-            <ui:Button Content="Refresh" Command="{Binding RefreshHistoryCommand}" Padding="12,6" VerticalAlignment="Center">
+            <ui:Button Content="Refresh" Command="{Binding RefreshHistoryCommand}" Padding="12,6" VerticalAlignment="Center" Margin="0,0,8,0">
                 <ui:Button.Icon>
                     <ui:SymbolIcon Symbol="ArrowSync24"/>
+                </ui:Button.Icon>
+            </ui:Button>
+            <ui:Button Content="Export All to CSV" Command="{Binding ExportHistoryToCsvCommand}" Padding="12,6" VerticalAlignment="Center">
+                <ui:Button.Icon>
+                    <ui:SymbolIcon Symbol="ArrowDownload24"/>
                 </ui:Button.Icon>
             </ui:Button>
         </StackPanel>
@@ -46,6 +51,16 @@
                 </DataGridTextColumn>
                 <DataGridTextColumn Header="Write MB/s" Binding="{Binding AverageWriteMegabytesPerSecond, StringFormat='{}{0:N1}'}" Width="90"/>
                 <DataGridTextColumn Header="Read MB/s" Binding="{Binding AverageReadMegabytesPerSecond, StringFormat='{}{0:N1}'}" Width="90"/>
+                <DataGridTemplateColumn Header="" Width="110">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <ui:Button Content="Load Report"
+                                       Command="{Binding DataContext.LoadReportCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                       CommandParameter="{Binding}"
+                                       Padding="8,4" FontSize="11"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
             </DataGrid.Columns>
         </DataGrid>
     </DockPanel>
