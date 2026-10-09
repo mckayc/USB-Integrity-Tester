@@ -90,6 +90,10 @@ public partial class MainViewModel : ObservableObject
         ClearExistingData = s.ClearExistingData;
         CleanupPolicy = s.CleanupPolicy;
 
+        FormatFileSystem = s.FormatFileSystem;
+        FormatBeforeFileModeTest = s.FormatBeforeFileModeTest;
+        RestoreVolumeAfterRawTest = s.RestoreVolumeAfterRawTest;
+
         RunCapacityTest = s.RunCapacityTest;
         RunSpeedTest = s.RunSpeedTest;
         CapacityScanDepth = s.CapacityScanDepth;
@@ -121,6 +125,10 @@ public partial class MainViewModel : ObservableObject
             ClearExistingData = ClearExistingData,
             CleanupPolicy = CleanupPolicy,
 
+            FormatFileSystem = FormatFileSystem,
+            FormatBeforeFileModeTest = FormatBeforeFileModeTest,
+            RestoreVolumeAfterRawTest = RestoreVolumeAfterRawTest,
+
             RunCapacityTest = RunCapacityTest,
             RunSpeedTest = RunSpeedTest,
             CapacityScanDepth = CapacityScanDepth,
@@ -144,7 +152,9 @@ public partial class MainViewModel : ObservableObject
     // --- Claimed Stats ---
     public ObservableCollection<DriveInfo> AvailableDrives { get; } = new();
 
-    [ObservableProperty] private DriveInfo? _selectedDrive;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsFat32Available))]
+    private DriveInfo? _selectedDrive;
     [ObservableProperty] private string _driveLabel = string.Empty;
     [ObservableProperty] private double _claimedCapacityGb = 64;
     [ObservableProperty] private double _claimedReadSpeedMegabytesPerSecond = 100;
@@ -152,7 +162,7 @@ public partial class MainViewModel : ObservableObject
 
     partial void OnSelectedDriveChanged(DriveInfo? value)
     {
-        if (value is null) return;
+        if (value is null || _isRefreshingAfterFormat) return;
 
         // Suggest the drive's model as the tracking label, but never clobber something the user typed.
         if (string.IsNullOrWhiteSpace(DriveLabel))
@@ -223,6 +233,31 @@ public partial class MainViewModel : ObservableObject
         if (CleanupPolicy != TestCleanupPolicy.DeleteOnAppClose) return;
         if (_lastFileModeVolumeLetter is not { } letter) return;
         FileModeEngine.TryDeleteTestFolder(letter);
+    }
+
+    // --- Drive Format ---
+    [ObservableProperty] private DriveFileSystem _formatFileSystem = DriveFileSystem.ExFat;
+    [ObservableProperty] private bool _formatBeforeFileModeTest;
+    [ObservableProperty] private bool _restoreVolumeAfterRawTest = true;
+
+    /// <summary>Windows won't format anything over 32 GB as FAT32, so that choice is greyed out for bigger drives.</summary>
+    public bool IsFat32Available => SelectedDrive is null || DriveFileSystem.Fat32.Supports(SelectedDrive.ReportedCapacityBytes);
+
+    /// <summary>Set while re-reading the drive list after a format, so picking up the drive's new
+    /// volume doesn't also reset the claimed capacity the user typed in for it.</summary>
+    private bool _isRefreshingAfterFormat;
+
+    private void RefreshDrivesAfterFormat()
+    {
+        _isRefreshingAfterFormat = true;
+        try
+        {
+            RefreshDrives();
+        }
+        finally
+        {
+            _isRefreshingAfterFormat = false;
+        }
     }
 
     [ObservableProperty] private bool _runCapacityTest = true;
@@ -546,6 +581,7 @@ public partial class MainViewModel : ObservableObject
     {
         try
         {
+            var previous = SelectedDrive;
             AvailableDrives.Clear();
             var foundDrives = DriveEnumerator.GetRemovableUsbDrives(out var diagnostics);
             foreach (var drive in foundDrives)
@@ -554,7 +590,13 @@ public partial class MainViewModel : ObservableObject
             foreach (var line in diagnostics)
                 AppLog.Info($"Drive enum: {line}");
 
-            SelectedDrive = AvailableDrives.FirstOrDefault();
+            // Keep whatever the user had picked if it's still attached; otherwise prefer a drive
+            // with a mounted volume (the only kind File Mode can test) over WMI's arbitrary order.
+            SelectedDrive =
+                AvailableDrives.FirstOrDefault(d => previous is not null
+                    && d.PhysicalDriveIndex == previous.PhysicalDriveIndex && d.SerialNumber == previous.SerialNumber)
+                ?? AvailableDrives.FirstOrDefault(d => d.VolumeLetter is not null)
+                ?? AvailableDrives.FirstOrDefault();
             AppLog.Info($"Refreshed drives — found {AvailableDrives.Count}.");
         }
         catch (Exception ex)
@@ -611,9 +653,24 @@ public partial class MainViewModel : ObservableObject
             return;
         }
 
-        if (TestMode == TestMode.File && SelectedDrive.VolumeLetter is null)
+        var formatsFirst = TestMode == TestMode.File && FormatBeforeFileModeTest;
+        var restoresAfter = TestMode == TestMode.Raw && RestoreVolumeAfterRawTest;
+
+        if (TestMode == TestMode.File && SelectedDrive.VolumeLetter is null && !formatsFirst)
         {
-            ProgressText = "File Mode needs a formatted, mounted volume — this drive has none. Try Raw Mode, or format the drive first.";
+            ProgressText = "File Mode needs a formatted, mounted volume — this drive has none. Turn on \"Format the drive before testing\" under Drive Format, or try Raw Mode.";
+            return;
+        }
+
+        if ((formatsFirst || restoresAfter) && !IsElevated)
+        {
+            ProgressText = "Formatting the drive needs Administrator — restart the app as Administrator, or turn formatting off under Drive Format.";
+            return;
+        }
+
+        if ((formatsFirst || restoresAfter) && !FormatFileSystem.Supports(SelectedDrive.ReportedCapacityBytes))
+        {
+            ProgressText = "Windows can only format drives up to 32 GB as FAT32 — pick exFAT or NTFS under Drive Format.";
             return;
         }
 
@@ -624,7 +681,16 @@ public partial class MainViewModel : ObservableObject
         if (TestMode == TestMode.Raw)
         {
             message = $"This will ERASE ALL DATA on:\n\n{driveDescription}\n\n" +
-                "Raw Mode writes directly to the drive's sectors and dismounts the volume for the duration — nothing will be visible in Explorer until the test finishes.\n\nContinue?";
+                "Raw Mode writes directly to the drive's sectors and dismounts the volume for the duration — nothing will be visible in Explorer until the test finishes." +
+                (restoresAfter
+                    ? $"\n\nAfterwards the drive will be re-partitioned and formatted as {FormatFileSystem.DisplayName()} so it's usable again."
+                    : "\n\nAfterwards the drive will have no usable file system until you format it.") +
+                "\n\nContinue?";
+        }
+        else if (formatsFirst)
+        {
+            message = $"This will ERASE ALL DATA on:\n\n{driveDescription}\n\n" +
+                $"The drive will be re-partitioned and formatted as {FormatFileSystem.DisplayName()} before testing. File Mode then writes visible test files to it.\n\nContinue?";
         }
         else if (ClearExistingData)
         {
@@ -640,12 +706,13 @@ public partial class MainViewModel : ObservableObject
         }
 
         var confirmed = await DialogService.ConfirmAsync(
-            TestMode == TestMode.Raw || ClearExistingData ? "Confirm destructive test" : "Confirm test (existing data preserved)",
+            TestMode == TestMode.Raw || formatsFirst || ClearExistingData ? "Confirm destructive test" : "Confirm test (existing data preserved)",
             message);
 
         if (!confirmed) return;
 
         IsTestRunning = true;
+        _postTestNotice = null;
         _testCancellation = new CancellationTokenSource();
         AppLog.Info($"Starting {TestMode} Mode test on {SelectedDrive.Model} (Serial {SelectedDrive.SerialNumber}), capacity scan depth {CapacityScanDepth}.");
 
@@ -653,6 +720,13 @@ public partial class MainViewModel : ObservableObject
         {
             await RunTestAsync(SelectedDrive, _testCancellation.Token);
             AppLog.Info("Test completed.");
+        }
+        catch (CapacityTestCancelledException ex)
+        {
+            // The flush in `finally` would otherwise overwrite this with a last throughput sample.
+            foreach (var track in AllTracks) track.PendingProgress = null;
+            ProgressText = PartialCapacityResultText(ex);
+            AppLog.Warning($"Test cancelled by user during capacity test. {ProgressText}");
         }
         catch (OperationCanceledException)
         {
@@ -676,7 +750,42 @@ public partial class MainViewModel : ObservableObject
             foreach (var track in AllTracks) track.MarkComplete();
             IsTestRunning = false;
             CurrentPhaseLabel = "Idle";
+            if (_postTestNotice is not null) ProgressText = _postTestNotice;
         }
+    }
+
+    /// <summary>Something the user needs to see once the run ends that isn't the run's own outcome —
+    /// currently, that the drive couldn't be re-formatted after a Raw Mode test.</summary>
+    private string? _postTestNotice;
+
+    private async Task RestoreVolumeAfterRawTestAsync(DriveInfo drive)
+    {
+        ProgressText = CurrentPhaseLabel = $"Re-creating a {FormatFileSystem.DisplayName()} volume on the drive…";
+        try
+        {
+            await DriveFormatter.RepartitionAndFormatAsync(drive, FormatFileSystem, msg => AppLog.Info(msg));
+            RefreshDrivesAfterFormat();
+        }
+        catch (Exception ex)
+        {
+            // Never let this mask the test's own outcome — report it separately instead.
+            _postTestNotice = $"The test ran, but re-formatting the drive afterwards failed: {ex.Message} Format it in Disk Management or Explorer before using it.";
+            AppLog.Error($"Restoring a volume after the Raw Mode test failed: {ex}");
+        }
+    }
+
+    /// <summary>What a stopped capacity test had proven by the time it stopped — hours of a Full scan
+    /// shouldn't vanish into a bare "Cancelled." just because it wasn't allowed to finish.</summary>
+    private static string PartialCapacityResultText(CapacityTestCancelledException ex)
+    {
+        static string Gb(ulong bytes) => $"{bytes / 1_000_000_000.0:N1} GB";
+
+        if (ex.BytesVerified == 0)
+            return $"Cancelled during the write pass after writing {Gb(ex.BytesWritten)} — nothing had been read back yet, so no capacity is verified.";
+
+        return ex.BlocksFailed == 0
+            ? $"Cancelled during verification — the first {Gb(ex.VerifiedGoodBytes)} checked out OK before you stopped ({Gb(ex.BytesWritten)} had been written)."
+            : $"Cancelled during verification — {ex.BlocksFailed:N0} block(s) had already FAILED. Only the first {Gb(ex.VerifiedGoodBytes)} verified as real storage.";
     }
 
     /// <summary>Which card a given test phase belongs to.</summary>
@@ -921,6 +1030,7 @@ public partial class MainViewModel : ObservableObject
             => $"Reading randomly-sized {TrackForPhase(phase)?.Title ?? "files"} — simulates copying files like this from the drive",
         TestPhase.CopyingRealFilesToUsb => "Copying your selected folder to the drive",
         TestPhase.CopyingAndVerifyingRealFilesFromUsb => "Copying those files back to the computer and verifying each one against the original",
+        TestPhase.CleaningUp => "Removing test files from the drive…",
         TestPhase.Complete => "Complete",
         _ => phase.ToString(),
     };
@@ -1106,6 +1216,16 @@ public partial class MainViewModel : ObservableObject
             // there's no jitter to smooth out here.
             CurrentPhaseLabel = PhaseLabel(p.Phase);
 
+            // Cleanup belongs to no test card, so nothing else would tell the user why the run
+            // looks idle — deleting a lot of leftover files can take a while. Drop any unflushed
+            // samples so the timer doesn't overwrite this message with a stale throughput reading.
+            if (p.Phase == TestPhase.CleaningUp)
+            {
+                foreach (var t in AllTracks) t.PendingProgress = null;
+                ProgressText = CurrentPhaseLabel;
+                return;
+            }
+
             // Fake/corrupted block detection is a rare, important discrete event — surface it the
             // instant it happens rather than waiting for the next throttled UI flush.
             if (p.Phase == TestPhase.VerifyingCapacityPattern && p.BlocksFailedSoFar > _lastReportedBlocksFailed)
@@ -1125,7 +1245,18 @@ public partial class MainViewModel : ObservableObject
         TestResult result;
         if (settings.TestMode == TestMode.File)
         {
-            var volumeLetter = drive.VolumeLetter!; // StartTestAsync already guarded against null here
+            string volumeLetter;
+            if (FormatBeforeFileModeTest)
+            {
+                ProgressText = CurrentPhaseLabel = $"Formatting the drive as {FormatFileSystem.DisplayName()}…";
+                volumeLetter = await DriveFormatter.RepartitionAndFormatAsync(drive, FormatFileSystem, msg => AppLog.Info(msg));
+                RefreshDrivesAfterFormat();
+            }
+            else
+            {
+                volumeLetter = drive.VolumeLetter!; // StartTestAsync already guarded against null here
+            }
+
             AppLog.Info(settings.ClearExistingData
                 ? $"File Mode: clearing existing data on {volumeLetter} before writing test files."
                 : $"File Mode: preserving existing data on {volumeLetter}, using free space only.");
@@ -1141,6 +1272,7 @@ public partial class MainViewModel : ObservableObject
                 : $"Locking {drive.VolumeLetters.Count} volume(s) before raw access: {string.Join(", ", drive.VolumeLetters)}");
 
             var lockers = new List<VolumeLocker>();
+            var rawWritesStarted = false;
             try
             {
                 foreach (var letter in drive.VolumeLetters)
@@ -1150,12 +1282,21 @@ public partial class MainViewModel : ObservableObject
                 }
 
                 using var accessor = RawDiskAccessor.Open(drive.DevicePath, writable: true);
+                rawWritesStarted = true;
                 var engine = new TestEngine();
                 result = await engine.RunAsync(accessor, claimedCapacityBytes, settings, progress, cancellationToken, WaitForNextTestIfNeededAsync);
             }
             finally
             {
                 foreach (var locker in lockers) locker.Dispose();
+
+                // Runs whether the test finished, was cancelled or failed — once raw writes have
+                // started the old file system is gone either way, and leaving the drive unusable
+                // ("you need to format the disk…") is what this option exists to avoid. Skipped if
+                // the run never got as far as writing (e.g. a volume refused to lock), since the
+                // drive is still intact then.
+                if (rawWritesStarted && RestoreVolumeAfterRawTest)
+                    await RestoreVolumeAfterRawTestAsync(drive);
             }
         }
 

@@ -56,6 +56,11 @@ public sealed record TestSettings
 
     public CapacityScanDepth CapacityScanDepth { get; init; } = CapacityScanDepth.Full;
     public int BlockSizeBytes { get; init; } = 1024 * 1024; // 1 MiB — capacity test's block granularity
+
+    /// <summary>File Mode only — how big each file the capacity test fills the drive with is. Verification
+    /// still happens per <see cref="BlockSizeBytes"/> block inside each file, so this only changes how many
+    /// files get created, not how finely fake storage is detected. Must stay under FAT32's 4 GB file limit.</summary>
+    public long CapacityFileSizeBytes { get; init; } = 1024L * 1024 * 1024; // 1 GiB
     public int QuickScanSampleCount { get; init; } = 256;
     public double StandardScanSampleFraction { get; init; } = 0.05;
     public TimeSpan SustainedSpeedTestDuration { get; init; } = TimeSpan.FromSeconds(20);

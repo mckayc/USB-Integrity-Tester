@@ -328,6 +328,101 @@
                             </StackPanel>
                         </ui:CardExpander>
 
+                        <ui:CardExpander Header="Drive Format" IsExpanded="True" Margin="0,0,0,12">
+                            <ui:CardExpander.Icon>
+                                <ui:SymbolIcon Symbol="HardDrive20"/>
+                            </ui:CardExpander.Icon>
+                            <StackPanel Margin="0,8,0,0">
+                                <!-- File Mode: optional format before the run. -->
+                                <StackPanel Visibility="{Binding TestMode, Converter={StaticResource TestModeToFileVisibilityConverter}}">
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Format the drive before testing" VerticalAlignment="Center" TextWrapping="Wrap"
+                                                   Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                        <ui:ToggleSwitch Grid.Column="1" IsChecked="{Binding FormatBeforeFileModeTest}"/>
+                                    </Grid>
+                                    <TextBlock Text="Erases the drive and gives it one fresh partition in the file system chosen below. Use it to test the file system you'll actually use, to start every run from the same clean, empty state, or to test a drive that currently has no volume (for example, after a Raw Mode test)."
+                                               Foreground="{DynamicResource TextFillColorTertiaryBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,12"/>
+                                </StackPanel>
+
+                                <!-- Raw Mode: optional restore after the run. -->
+                                <StackPanel Visibility="{Binding TestMode, Converter={StaticResource TestModeToRawVisibilityConverter}}">
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Re-create a volume when the test ends" VerticalAlignment="Center" TextWrapping="Wrap"
+                                                   Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                        <ui:ToggleSwitch Grid.Column="1" IsChecked="{Binding RestoreVolumeAfterRawTest}"/>
+                                    </Grid>
+                                    <TextBlock Text="Raw Mode overwrites the drive's file system, so Windows can't use the drive afterwards until it's formatted. With this on, the drive gets one fresh partition in the file system chosen below as soon as the test ends, even if you cancel it."
+                                               Foreground="{DynamicResource TextFillColorTertiaryBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,12"/>
+                                </StackPanel>
+
+                                <TextBlock Text="File system" FontWeight="SemiBold" Margin="0,0,0,8" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+
+                                <RadioButton GroupName="FileSystem" Margin="0,0,0,2"
+                                             IsChecked="{Binding FormatFileSystem, Converter={StaticResource FileSystemExFatConverter}}">
+                                    <TextBlock Text="exFAT: the usual choice for flash drives and portable SSDs" TextWrapping="Wrap"/>
+                                </RadioButton>
+                                <TextBlock Text="Works on Windows, macOS and most TVs, cameras, game consoles and car stereos, with no 4 GB file-size limit. Lightweight with no journal, so each file costs little extra work. Folders aren't indexed, though, so a folder holding a huge number of files gets slow."
+                                           Foreground="{DynamicResource TextFillColorTertiaryBrush}" FontSize="11" TextWrapping="Wrap" Margin="24,0,0,10"/>
+
+                                <RadioButton GroupName="FileSystem" Margin="0,0,0,2"
+                                             IsChecked="{Binding FormatFileSystem, Converter={StaticResource FileSystemNtfsConverter}}">
+                                    <TextBlock Text="NTFS: Windows' own file system" TextWrapping="Wrap"/>
+                                </RadioButton>
+                                <TextBlock Text="Journaled, so it recovers better if the drive is unplugged mid-write, and it copes well with very large folders. That extra bookkeeping can cost some speed, especially with lots of small files. Macs can only read NTFS without extra software, and many TVs, cars and cameras can't use it at all."
+                                           Foreground="{DynamicResource TextFillColorTertiaryBrush}" FontSize="11" TextWrapping="Wrap" Margin="24,0,0,10"/>
+
+                                <RadioButton GroupName="FileSystem" Margin="0,0,0,2" IsEnabled="{Binding IsFat32Available}"
+                                             IsChecked="{Binding FormatFileSystem, Converter={StaticResource FileSystemFat32Converter}}">
+                                    <TextBlock Text="FAT32: maximum compatibility, small drives only" TextWrapping="Wrap"/>
+                                </RadioButton>
+                                <TextBlock Text="Almost every device can read it, including old ones. But no single file can be 4 GB or larger, and Windows only formats drives up to 32 GB as FAT32."
+                                           Foreground="{DynamicResource TextFillColorTertiaryBrush}" FontSize="11" TextWrapping="Wrap" Margin="24,0,0,2"/>
+                                <TextBlock Text="Not available for this drive, because it's larger than 32 GB."
+                                           Visibility="{Binding IsFat32Available, Converter={StaticResource InverseBoolToVisibilityConverter}}"
+                                           Foreground="{DynamicResource SystemFillColorCautionBrush}" FontSize="11" TextWrapping="Wrap" Margin="24,0,0,2"/>
+
+                                <Expander Header="Why test in one file system and not another?" Margin="0,12,0,0">
+                                    <StackPanel Margin="0,8,0,0">
+                                        <TextBlock Text="Fake-capacity detection doesn't depend on it." FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,2"
+                                                   Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                        <TextBlock Text="Whether the storage is real is a property of the drive itself. The capacity test catches a counterfeit drive in any file system, and Raw Mode skips the file system entirely."
+                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,10"/>
+
+                                        <TextBlock Text="Speed results can." FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,2"
+                                                   Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                        <TextBlock Text="With large files the drive itself is usually the bottleneck, so results tend to be close in every file system. With small files, every file also costs some file-system bookkeeping (folder entries, allocation tables, and for NTFS its journal and file table). Each file system does that work differently, so Small Files results can differ noticeably."
+                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,10"/>
+
+                                        <TextBlock Text="So test in the file system you'll actually use." FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,2"
+                                                   Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                        <TextBlock TextWrapping="Wrap" FontSize="12" Margin="0,0,0,10" Foreground="{DynamicResource TextFillColorSecondaryBrush}">
+                                            <Run FontWeight="SemiBold" Text="exFAT"/><Run Text=" if the drive moves between computers and other devices. This is how most people use a USB drive."/>
+                                            <LineBreak/>
+                                            <Run FontWeight="SemiBold" Text="NTFS"/><Run Text=" if it stays with Windows PCs, for example as a backup drive, a game library or a portable Windows install."/>
+                                            <LineBreak/>
+                                            <Run FontWeight="SemiBold" Text="FAT32"/><Run Text=" for a small drive used with older hardware, such as car stereos, printers or motherboard BIOS updates."/>
+                                        </TextBlock>
+
+                                        <TextBlock Text="Comparing file systems on the same drive is a fair test." FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,2"
+                                                   Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                        <TextBlock Text="Run the speed test once in each file system and compare the results in History. Formatting before each run also makes runs fairer to compare: each one starts from an empty drive, and on most SSDs a format also tells the drive that all of its space is free again (TRIM), so data left over from an earlier run can't slow down the next one."
+                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="12" TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                </Expander>
+
+                                <TextBlock Text="Formatting erases everything on the drive and requires running the app as Administrator."
+                                           Foreground="{DynamicResource TextFillColorTertiaryBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,12,0,0"/>
+                            </StackPanel>
+                        </ui:CardExpander>
+
                         <ui:CardExpander Header="Capacity Test" IsExpanded="True" Margin="0,0,0,12">
                             <ui:CardExpander.Icon>
                                 <ui:SymbolIcon Symbol="ClipboardTaskListLtr24"/>

@@ -21,6 +21,10 @@ public enum TestPhase
     CopyingRealFilesToUsb,
     CopyingAndVerifyingRealFilesFromUsb,
 
+    /// <summary>File Mode only — deleting leftover test files, before a run (clearing the drive) or
+    /// after one that was cancelled or failed. Can take a while if a lot of files were left behind.</summary>
+    CleaningUp,
+
     Complete,
 }
 

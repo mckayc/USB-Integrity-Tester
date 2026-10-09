@@ -4,6 +4,7 @@
              xmlns:local="clr-namespace:UsbIntegrityTester.App"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:testing="clr-namespace:UsbIntegrityTester.Core.Testing;assembly=UsbIntegrityTester.Core"
+             xmlns:devices="clr-namespace:UsbIntegrityTester.Core.Devices;assembly=UsbIntegrityTester.Core"
              StartupUri="MainWindow.xaml">
     <Application.Resources>
         <ResourceDictionary>
@@ -29,6 +30,11 @@
             <local:EnumEqualityConverter x:Key="TestModeFileConverter" Target="{x:Static testing:TestMode.File}"/>
             <local:TestModeToFileVisibilityConverter x:Key="TestModeToFileVisibilityConverter"/>
             <local:EnumEqualityConverter x:Key="TestModeRawConverter" Target="{x:Static testing:TestMode.Raw}"/>
+            <local:TestModeToRawVisibilityConverter x:Key="TestModeToRawVisibilityConverter"/>
+            <local:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibilityConverter"/>
+            <local:EnumEqualityConverter x:Key="FileSystemExFatConverter" Target="{x:Static devices:DriveFileSystem.ExFat}"/>
+            <local:EnumEqualityConverter x:Key="FileSystemNtfsConverter" Target="{x:Static devices:DriveFileSystem.Ntfs}"/>
+            <local:EnumEqualityConverter x:Key="FileSystemFat32Converter" Target="{x:Static devices:DriveFileSystem.Fat32}"/>
             <local:EnumEqualityConverter x:Key="CleanupDeleteAfterTestConverter" Target="{x:Static testing:TestCleanupPolicy.DeleteAfterTest}"/>
             <local:EnumEqualityConverter x:Key="CleanupDeleteOnAppCloseConverter" Target="{x:Static testing:TestCleanupPolicy.DeleteOnAppClose}"/>
             <local:EnumEqualityConverter x:Key="CleanupKeepUntilManualConverter" Target="{x:Static testing:TestCleanupPolicy.KeepUntilManual}"/>

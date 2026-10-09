@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Diagnostics;
 
 namespace UsbIntegrityTester.Core.Testing;
@@ -20,6 +21,37 @@ public sealed record CapacityVerificationResult
 
     /// <summary>Same idea for the verify pass, which reads every tested block back.</summary>
     public double ReadMegabytesPerSecond { get; init; }
+}
+
+/// <summary>
+/// Thrown when a capacity test is cancelled partway through, carrying whatever had already been
+/// proven — a multi-hour scan that gets stopped shouldn't throw that work away. Deliberately not
+/// tied to the run's CancellationToken: a Task.Run delegate that throws an OperationCanceledException
+/// carrying its own token becomes a "cancelled" task, and awaiting that rethrows a bare
+/// TaskCanceledException with this data gone. Still an OperationCanceledException, so callers that
+/// don't care about the partial result keep treating it as an ordinary cancel.
+/// </summary>
+public sealed class CapacityTestCancelledException : OperationCanceledException
+{
+    /// <summary>Bytes of test pattern written before the stop.</summary>
+    public ulong BytesWritten { get; }
+
+    /// <summary>Bytes read back and checked before the stop — 0 if it was stopped during the write pass.</summary>
+    public ulong BytesVerified { get; }
+
+    /// <summary>Bytes counting up from the start that verified correctly with no gaps, as far as verification got.</summary>
+    public ulong VerifiedGoodBytes { get; }
+
+    public int BlocksFailed { get; }
+
+    public CapacityTestCancelledException(ulong bytesWritten, ulong bytesVerified, ulong verifiedGoodBytes, int blocksFailed)
+        : base("Capacity test cancelled.")
+    {
+        BytesWritten = bytesWritten;
+        BytesVerified = bytesVerified;
+        VerifiedGoodBytes = verifiedGoodBytes;
+        BlocksFailed = blocksFailed;
+    }
 }
 
 /// <summary>
@@ -56,7 +88,8 @@ public sealed class CapacityVerifier
 
         foreach (var offset in blockOffsets)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            if (cancellationToken.IsCancellationRequested)
+                throw new CapacityTestCancelledException(workDone, 0, 0, 0);
             FillDeterministicBlock(buffer, seed, offset);
             accessor.WriteBlock(offset, buffer, blockSize);
 
@@ -98,10 +131,12 @@ public sealed class CapacityVerifier
         windowStopwatch.Restart();
         blocksInWindow = 0;
 
+        var bytesWritten = workDone;
         var orderedOffsets = blockOffsets.OrderBy(o => o).ToList();
         foreach (var offset in orderedOffsets)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            if (cancellationToken.IsCancellationRequested)
+                throw new CapacityTestCancelledException(bytesWritten, workDone - bytesWritten, verifiedGoodBytes, blocksFailed);
             FillDeterministicBlock(expected, seed, offset);
             accessor.ReadBlock(offset, readBuffer, blockSize);
 
@@ -155,15 +190,21 @@ public sealed class CapacityVerifier
     }, cancellationToken);
 
     /// <summary>Produces deterministic pseudo-random bytes derived from (seed, blockOffset), reproducible without storing test data.</summary>
-    internal static void FillDeterministicBlock(byte[] buffer, ulong seed, ulong blockOffset)
+    internal static void FillDeterministicBlock(Span<byte> buffer, ulong seed, ulong blockOffset)
     {
         var state = seed ^ (blockOffset * 0x9E3779B97F4A7C15UL);
-        for (var i = 0; i < buffer.Length; i += 8)
+        var i = 0;
+        for (; i + 8 <= buffer.Length; i += 8)
         {
             state = SplitMix64Next(state);
-            var bytes = BitConverter.GetBytes(state);
-            var count = Math.Min(8, buffer.Length - i);
-            Array.Copy(bytes, 0, buffer, i, count);
+            BinaryPrimitives.WriteUInt64LittleEndian(buffer.Slice(i, 8), state);
+        }
+
+        if (i < buffer.Length)
+        {
+            Span<byte> tail = stackalloc byte[8];
+            BinaryPrimitives.WriteUInt64LittleEndian(tail, SplitMix64Next(state));
+            tail[..(buffer.Length - i)].CopyTo(buffer[i..]);
         }
     }
 

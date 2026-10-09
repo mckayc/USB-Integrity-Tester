@@ -23,6 +23,10 @@ public sealed record UserSettings
     public bool ClearExistingData { get; init; } = true;
     public TestCleanupPolicy CleanupPolicy { get; init; } = TestCleanupPolicy.DeleteAfterTest;
 
+    public DriveFileSystem FormatFileSystem { get; init; } = DriveFileSystem.ExFat;
+    public bool FormatBeforeFileModeTest { get; init; }
+    public bool RestoreVolumeAfterRawTest { get; init; } = true;
+
     public bool RunCapacityTest { get; init; } = true;
     public bool RunSpeedTest { get; init; } = true;
     public CapacityScanDepth CapacityScanDepth { get; init; } = CapacityScanDepth.Full;

@@ -56,6 +56,16 @@ public static class DriveEnumerator
                 continue;
             }
             var capacity = disk["Size"] is not null ? Convert.ToUInt64(disk["Size"]) : 0UL;
+
+            // Card readers expose one "Generic MassStorageClass" disk per slot whether or not a card
+            // is inserted — an empty slot reports no size at all. Nothing to test there, and listing
+            // it would let it get auto-selected ahead of the real drive.
+            if (capacity == 0)
+            {
+                diag.Add($"skipped \"{model}\" (PHYSICALDRIVE{index}) — reports no size (empty card reader slot or no media).");
+                continue;
+            }
+
             var serial = ((string?)disk["SerialNumber"] ?? "UNKNOWN").Trim();
 
             var volumeLetters = GetAllVolumeLetters(index);

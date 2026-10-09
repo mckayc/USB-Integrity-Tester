@@ -38,6 +38,16 @@ public sealed class TestModeToFileVisibilityConverter : IValueConverter
         throw new NotSupportedException();
 }
 
+/// <summary>Shows its target only when TestMode is Raw — the counterpart to <see cref="TestModeToFileVisibilityConverter"/>.</summary>
+public sealed class TestModeToRawVisibilityConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture) =>
+        value is TestMode.Raw ? Visibility.Visible : Visibility.Collapsed;
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}
+
 /// <summary>Converts a byte count (ulong or ulong?) to gigabytes for display.</summary>
 public sealed class BytesToGbConverter : IValueConverter
 {
